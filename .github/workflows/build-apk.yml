@@ -121,10 +121,3 @@ jobs:
       with:
         name: cloudflare-ip-data-apk
         path: main/build/outputs/apk/debug/*.apk
-        ./gradlew :main:assembleDebug --stacktrace -x lint -x test --warning-mode none --no-daemon
-
-    - name: Upload APK
-      uses: actions/upload-artifact@v4
-      with:
-        name: cloudflare-ip-data-apk
-        path: main/build/outputs/apk/debug/*.apk
