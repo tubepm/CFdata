@@ -2,90 +2,84 @@ name: Build Android APK
 
 on:
   push:
-    branches: [ "main" ]
+    branches: [ main ]
   workflow_dispatch:
-
-env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout Code
+      - name: Checkout code
         uses: actions/checkout@v4
 
       - name: Set up JDK 17
         uses: actions/setup-java@v4
         with:
-          java-version: "17"
-          distribution: "temurin"
+          java-version: '17'
+          distribution: 'temurin'
 
-      - name: Set up Go
+      - name: Set up Go 1.22
         uses: actions/setup-go@v5
         with:
-          go-version: "1.22"
+          go-version: '1.22'
 
-      - name: Install Android SDK & NDK
+      - name: Setup Android NDK
         uses: android-actions/setup-android@v3
         with:
-          ndk-version: "26.2.11394342"
+          ndk-version: 25.2.9519653
 
-      - name: Export NDK Path
+      - name: Set NDK path
         run: |
-          echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/26.2.11394342" >> $GITHUB_ENV
+          NDK=$ANDROID_HOME/ndk/25.2.9519653
+          echo "ANDROID_NDK_HOME=$NDK" >> $GITHUB_ENV
+          echo "NDK=$NDK" >> $GITHUB_ENV
 
-      - name: Install Gomobile and Tools
+      - name: Install gomobile
         run: |
           go install golang.org/x/mobile/cmd/gomobile@latest
           go install golang.org/x/mobile/cmd/gobind@latest
           echo "PATH=$PATH:$(go env GOPATH)/bin" >> $GITHUB_ENV
-          export PATH=$PATH:$(go env GOPATH)/bin
           gomobile init
 
-      - name: Prepare Code & Entry File
+      - name: Prepare build files
         run: |
-          rm -f go.mod go.sum gomobile_entry.go || true
-          git checkout -- cfdata.go || true
+          # 清理旧文件
+          rm -f go.mod go.sum main.go entry.go || true
 
-          mkdir -p assets
-          cp index.html assets/ || true
-          [ -f locations.json ] && cp locations.json assets/
+          # 把 cfdata.go 改成 package main
+          sed -i '1s/^package cfdata/package main/' cfdata.go
 
-          sed -i '1s/^package .*/package main/' cfdata.go
-
-          cat << 'EOF' > gomobile_entry.go
+          # 生成 gomobile 入口
+          cat > entry.go << 'EOF'
 package main
 
 import (
-        "time"
-        "golang.org/x/mobile/app"
-        _ "golang.org/x/mobile/app"
+  "time"
+  "golang.org/x/mobile/app"
 )
 
 func main() {
-        go StartServer(8080, "speed.cloudflare.com/__down?bytes=100000000")
+  go StartServer(8080, "speed.cloudflare.com/__down?bytes=100000000")
 
-        app.Main(func(a app.App) {
-                go func() {
-                        time.Sleep(600 * time.Millisecond)
-                        a.OpenURL("http://127.0.0.1:8080")
-                }()
-                for range a.Events() {}
-        })
+  app.Main(func(a app.App) {
+    go func() {
+      time.Sleep(600 * time.Millisecond)
+      a.OpenURL("http://127.0.0.1:8080")
+    }()
+    for range a.Events() {}
+  })
 }
 EOF
 
-      - name: Go Mod Init & Tidy
+      - name: Go mod init & tidy
         run: |
-          go mod init main
+          go mod init cfdata
           go get github.com/gorilla/websocket
           go get golang.org/x/mobile/app
           go mod tidy
 
-      - name: Build Android APK
+      - name: Build APK
         run: |
-          export PATH=$PATH:$(go env GOPATH)/bin
           gomobile build -target=android -androidapi=21 -o cfdata.apk .
 
       - name: Upload APK
