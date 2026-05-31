@@ -38,76 +38,40 @@ jobs:
 
     - name: Prepare Go Module and Entry Point
       run: |
-        # 1. 如果 cfdata.go 不存在，则创建一个最小示例（但一般用户会有）
-        if [ ! -f cfdata.go ]; then
-          printf '%s\n' 'package main' '' 'func main() {' '    // 自定义逻辑' '}' > cfdata.go
-        fi
-
-        # 2. 将原来的 cfdata.go 改为 package main（如果还不是）
+        if [ ! -f cfdata.go ]; then echo 'package main' > cfdata.go; echo '' >> cfdata.go; echo 'func main() {}' >> cfdata.go; fi
         sed -i '1s/^package .*/package main/' cfdata.go
+        echo 'package main' > main.go
+        echo '' >> main.go
+        echo 'import (' >> main.go
+        echo '    "log"' >> main.go
+        echo '    "golang.org/x/mobile/app"' >> main.go
+        echo ')' >> main.go
+        echo '' >> main.go
+        echo 'func main() {' >> main.go
+        echo '    app.Main(func(a app.App) {' >> main.go
+        echo '        log.Println("CFdata Android App Started")' >> main.go
+        echo '        // TODO: 调用您的业务逻辑，例如 Run()' >> main.go
+        echo '    })' >> main.go
+        echo '}' >> main.go
+        cat cfdata.go >> main.go
+        if [ ! -f index.html ]; then echo '<!DOCTYPE html><html><body>CFdata</body></html>' > index.html; fi
+        rm -f go.mod go.sum || true
+        go mod init cfdata_app
+        go get github.com/gorilla/websocket
+        go get golang.org/x/mobile@latest
+        go mod tidy
 
-        # 3. 生成一个新的 main.go 作为 gomobile 入口，它会调用原有逻辑
-        cat > main_launcher.go << 'EOF'
-package main
+    - name: Build Android APK
+      run: |
+        export PATH=$PATH:$(go env GOPATH)/bin
+        export ANDROID_NDK_HOME=${{ env.ANDROID_NDK_HOME }}
+        gomobile build -target=android -androidapi=21 -o cfdata.apk .
 
-import (
-    "log"
-    "golang.org/x/mobile/app"
-)
-
-func init() {
-    // 可选：在这里初始化原有包中的全局变量
-}
-
-func main() {
-    app.Main(func(a app.App) {
-        // 在 app 生命周期中启动原有业务逻辑
-        // 下面尝试多种可能存在的入口函数，只调用第一个存在的
-        log.Println("Starting CFdata Android App")
-        
-        // 尝试调用 Run()，如果没有则忽略
-        if err := callRun(); err != nil {
-            // 如果 Run 不存在，尝试调用 Start()
-            if err2 := callStart(); err2 != nil {
-                log.Println("No Run() or Start() found, running original main logic")
-                // 如果都没有，执行原有文件中的 main 函数（如果存在）
-                executeOriginalMain()
-            }
-        }
-    })
-}
-
-// 通过反射或直接声明，这里简单起见，我们直接假设您有 Run() 函数
-// 如果您的代码中没有这些函数，请根据实际情况修改下面两行
-func callRun() error {
-    // 如果您有 func Run()，请取消注释下一行
-    // Run()
-    return nil // 这里只是一个占位，实际编译时会失败，需手动适配
-}
-
-func callStart() error {
-    // 如果您有 func Start()，请取消注释下一行
-    // Start()
-    return nil
-}
-
-func executeOriginalMain() {
-    // 如果您的原始 cfdata.go 中已经包含 main 函数，
-    // 为了避免冲突，需要您手动将业务逻辑放到一个单独的函数中。
-    // 最简单的做法：在 cfdata.go 中定义 func RunApp()，然后在这里调用。
-    log.Println("请定义 RunApp() 函数并在其中启动您的 WebSocket 扫描逻辑")
-}
-EOF
-
-        # 4. 合并原有代码和新的入口文件
-        cat cfdata.go >> main_launcher.go
-        mv main_launcher.go main.go
-
-        # 5. 确保 index.html 存在（防止 //go:embed 报错）
-        if [ ! -f index.html ]; then
-          echo '<!DOCTYPE html><html><body>CFdata</body></html>' > index.html
-        fi
-
+    - name: Upload APK Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: cfdata-apk
+        path: cfdata.apk
         # 6. 初始化 go.mod 并添加必要依赖
         rm -f go.mod go.sum || true
         go mod init cfdata_app
