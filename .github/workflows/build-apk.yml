@@ -57,4 +57,35 @@ jobs:
 
 func main() {
     // 自动追加的安卓端服务启动入口
-    err := StartServer(8080, "speed
+    err := StartServer(8080, "speed.cloudflare.com/__down?bytes=100000000")
+    if err != nil {
+        println("服务启动失败:", err.Error())
+    }
+}
+EOF
+        fi
+
+        # 4. 确保 index.html 存在，防止 //go:embed index.html 报错
+        if [ ! -f index.html ]; then
+          echo '<!DOCTYPE html><html><body><h1>CFdata Android 运行中</h1></body></html>' > index.html
+        fi
+
+        # 5. 规范化配置 Go Module 并拉取最新的 WebSocket 依赖包
+        rm -f go.mod go.sum || true
+        go mod init cfdata_app
+        go get github.com/gorilla/websocket
+        go mod tidy
+
+    - name: Build Android APK
+      run: |
+        export PATH=$PATH:$(go env GOPATH)/bin
+        export ANDROID_NDK_HOME=${{ env.ANDROID_NDK_HOME }}
+        
+        # 6. 使用点号 "." 编译当前整包，同时带上你指定的兼容参数
+        gomobile build -target=android -androidapi=21 -o cfdata.apk .
+
+    - name: Upload APK Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: cfdata-apk
+        path: cfdata.apk
