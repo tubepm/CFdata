@@ -36,44 +36,30 @@ jobs:
         export ANDROID_NDK_HOME=${{ env.ANDROID_NDK_HOME }}
         gomobile init
 
-    - name: Clean And Restore Code
+    - name: Prepare Pure Code Environment
       run: |
-        # 1. 彻底清除之前生成的残留干扰文件
+        # 1. 清除上几次生成的所有残留文件，确保区内干净
         rm -f go.mod go.sum main.go index.html || true
         
-        # 2. 强行把你的 cfdata.go 恢复到最干净、健康的原始状态
+        # 2. 强行将你的 cfdata.go 彻底恢复到你提交时的最原始状态
         git checkout -- cfdata.go || true
 
-        # 3. 将包名强制变更为标准的 package main，以便 gomobile 直接构建独立应用
-        sed -i '1s/^Package .*/package main/' cfdata.go
+        # 3. 将第一行的 package cfdata 变更为 package main，满足单独编译 APK 的要求
         sed -i '1s/^package .*/package main/' cfdata.go
 
-        # 4. 确保 index.html 存在，防 embed 报错
-        if [ ! -f index.html ]; then
-          echo '<!DOCTYPE html><html><body>CFdata Android</body></html>' > index.html
-        fi
-
-    - name: Auto Create Main Entry
-      run: |
-        # 5. 用最纯净、绝不飘红线的 echo 方式逐行生成 main.go 入口文件
-        echo "package main" > main.go
-        echo "import (" >> main.go
-        echo "	\"log\"" >> main.go
-        echo "	\"golang.org/x/mobile/app\"" >> main.go
-        echo ")" >> main.go
-        echo "func main() {" >> main.go
-        echo "	go func() {" >> main.go
-        echo "		log.Println(\"正在启动 CFdata 后台监听服务...\")" >> main.go
-        echo "		StartServer(8080)" >> main.go
-        echo "	}()" >> main.go
-        echo "	app.Main(func(a app.App) {" >> main.go
-        echo "		for range a.Events() {}" >> main.go
-        echo "	})" >> main.go
-        echo "}" >> main.go
+        # 4. 关键修复：直接向 cfdata.go 的文件末尾追加标准的 main 入口和后台拉起函数
+        # 这种平铺追加不带任何双引号和复杂转义，100% 不会引起 YAML 飘红
+        echo "" >> cfdata.go
+        echo "func main() {" >> cfdata.go
+        echo "	go StartServer(8080)" >> cfdata.go
+        echo "	golang.org/x/mobile/app.Main(func(a golang.org/x/mobile/app.App) {" >> cfdata.go
+        echo "		for range a.Events() {}" >> cfdata.go
+        echo "	})" >> cfdata.go
+        echo "}" >> cfdata.go
 
     - name: Initialize Modules
       run: |
-        # 6. 初始化 go 模块并拉取你在 cfdata.go 中需要的 websocket 依赖包
+        # 5. 初始化 Go 模块并拉取项目必须的 websocket 依赖
         go mod init cfdata_app
         go get github.com/gorilla/websocket
         go mod tidy
@@ -83,7 +69,7 @@ jobs:
         export PATH=$PATH:$(go env GOPATH)/bin
         export ANDROID_NDK_HOME=${{ env.ANDROID_NDK_HOME }}
         
-        # 7. 整包编译当前目录，并强制指定支持 API 21 绕过高版本 NDK 限制
+        # 6. 整包编译当前目录，生成最终的 APK 文件
         gomobile build -target=android -androidapi=21 -o cfdata.apk .
 
     - name: Upload APK Artifact
