@@ -37,31 +37,45 @@ jobs:
 
     - name: Prepare Architecture Environment
       run: |
-        # 1. 彻底清除上几次残存的碎片垃圾文件
+        # 1. 彻底清除之前生成的残留干扰文件
         rm -f go.mod go.sum main.go || true
         
-        # 2. 强行将你的 cfdata.go 恢复到你代码库里最新、最纯净的原始代码状态
+        # 2. 强行将你的 cfdata.go 恢复到你代码库里最纯净的原始代码状态
         git checkout -- cfdata.go || true
         
-        # 3. 将第一行的 package cfdata 变更为标准的 package main，满足编译独立 APK 的铁律
+        # 3. 创建标准的安卓 Assets 资源目录，把网页和数据中心文件强制装包，防止白屏
+        mkdir -p assets
+        cp index.html assets/ || true
+        if [ -f locations.json ]; then cp locations.json assets/; fi
+        
+        # 4. 将第一行的 package cfdata 变更为 package main，满足编译独立 APK 的标准
         sed -i '1s/^package .*/package main/' cfdata.go
         
-        # 4. 关键修复：利用 sed 将 gomobile 所需的移动端底层依赖精准插入到第二行（紧跟在 package main 下方）
-        # 完美解决 "imports must appear before other declarations" 的 Go 严格语法限制！
+        # 5. 精准注入 gomobile 所需的移动端底层依赖到第二行
         sed -i '1a import _ "golang.org/x/mobile/app"' cfdata.go
         
-        # 5. 如果你的代码里本身没有编写 func main() 入口，我们在最末尾安全地追加一个
-        # 改用 Go 语言天然支持的十六进制或不带任何转义的字符，彻底避免在 echo 里面传双引号和长链接触发网页红线！
+        # 6. 在文件末尾追加主入口。由于是在后台运行，为了让安卓白屏壳子有内容，
+        # 我们让它在启动后 500 毫秒自动唤起手机自带浏览器跳转到 http://127.0.0.1:8080
+        # 这样一打开 App 就会自动弹出你的测速优选面板！
         if ! grep -q "func main()" cfdata.go; then
           echo "" >> cfdata.go
+          echo "import \`golang.org/x/mobile/app\`" >> cfdata.go
+          echo "import \`time\`" >> cfdata.go
           echo "func main() {" >> cfdata.go
-          echo "	StartServer(8080, \`speed.cloudflare.com/__down?bytes=100000000\`)" >> cfdata.go
+          echo "	go StartServer(8080, \`speed.cloudflare.com/__down?bytes=100000000\`)" >> cfdata.go
+          echo "	app.Main(func(a app.App) {" >> cfdata.go
+          echo "		go func() {" >> cfdata.go
+          echo "			time.Sleep(500 * time.Millisecond)" >> cfdata.go
+          echo "			a.OpenURL(\`http://127.0.0.1:8080\`)" >> cfdata.go
+          echo "		}()" >> cfdata.go
+          echo "		for range a.Events() {}" >> cfdata.go
+          echo "	})" >> cfdata.go
           echo "}" >> cfdata.go
         fi
 
     - name: Initialize Modules
       run: |
-        # 6. 用主模块环境重新梳理依赖链并拉取必要依赖
+        # 7. 重新梳理依赖链并拉取必要依赖
         go mod init main
         go get github.com/gorilla/websocket
         go get golang.org/x/mobile/app
@@ -72,7 +86,7 @@ jobs:
         export PATH=$PATH:$(go env GOPATH)/bin
         export ANDROID_NDK_HOME=${{ env.ANDROID_NDK_HOME }}
         
-        # 7. 开始整包构建，输出带你最新功能的完整成品 APK
+        # 8. 开始整包构建，输出带你最新功能的完整成品 APK
         gomobile build -target=android -androidapi=21 -o cfdata.apk .
 
     - name: Upload APK Artifact
