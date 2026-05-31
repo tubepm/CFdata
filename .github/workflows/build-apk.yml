@@ -43,16 +43,16 @@ jobs:
       run: |
         gomobile init
 
-    # 6. 将你的 cfdata 编译绑定为标准的安卓原生插件包 (.aar)
+    # 6. 生成 aar 插件
     - name: Bind Go to Android Library
       run: |
         mkdir -p main/libs
-        gomobile bind -target=android/arm64 -androidapi 21 -o main/libs/cfdata.aar .
+        gomobile bind -androidapi 21 -o main/libs/cfdata.aar .
 
-    # 7. 【终极防卡】极致精简生成，彻底删除所有带冒号的 dependencies
-    - name: Auto Generate Top-Level and App Gradle Files
+    # 7. 全自动补全 Gradle 配置文件
+    - name: Auto Generate Gradle Files
       run: |
-        # 1. 创建顶层 settings.gradle
+        # 1. 顶层 settings.gradle
         cat << 'SETTING_EOF' > settings.gradle
         pluginManagement {
             repositories {
@@ -71,14 +71,14 @@ jobs:
         include ':main'
         SETTING_EOF
         
-        # 2. 创建主 build.gradle (指定稳定的 8.2.2 框架插件)
+        # 2. 根目录 build.gradle
         cat << 'ROOT_EOF' > build.gradle
         plugins {
             id 'com.android.application' version '8.2.2' apply false
         }
         ROOT_EOF
         
-        # 3. 创建 main 目录下的纯净版 build.gradle (不带任何三方包依赖声明)
+        # 3. main 模块下的 build.gradle
         cat << 'APP_EOF' > main/build.gradle
         plugins {
             id 'com.android.application'
@@ -93,36 +93,28 @@ jobs:
                 versionCode 1
                 versionName '1.0'
             }
-            buildTypes {
-                release {
-                    minifyEnabled false
-                }
-            }
-            compileOptions {
-                sourceCompatibility JavaVersion.VERSION_17
-                targetCompatibility JavaVersion.VERSION_17
-            }
-            lint {
-                abortOnError false
-                checkReleaseBuilds false
+        }
+        repositories {
+            flatDir {
+                dirs 'libs'
             }
         }
         dependencies {
-            implementation files('libs/cfdata.aar')
+            implementation(name: 'cfdata', ext: 'aar')
         }
         APP_EOF
 
-    # 8. 一键生成官方独立的 Gradle 8.4 包装器 (Wrapper) 
-    - name: Setup Independent Gradle Wrapper
+    # 8. 生成 Gradle Wrapper
+    - name: Setup Gradle Wrapper
       run: |
         gradle wrapper --gradle-version 8.4 --distribution-type bin
 
-    # 9. 使用全新的本地包装器执行无打断编译
-    - name: Build APK with Gradle Wrapper
+    # 9. 执行编译
+    - name: Build APK
       run: |
-        ./gradlew :main:assembleDebug -x lint -x test --warning-mode none
+        ./gradlew :main:assembleDebug -x lint -x test
 
-    # 10. 收集并上传最终生成的 APK 安装包
+    # 10. 上传 Artifact
     - name: Upload APK Artifact
       uses: actions/upload-artifact@v4
       with:
