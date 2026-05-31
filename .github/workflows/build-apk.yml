@@ -43,49 +43,44 @@ jobs:
         rm -f go.mod go.sum main.go || true
         git checkout -- cfdata.go || true
         
+        # 1. 核心修复：防止 embed 找不到文件报错
         if [ ! -f index.html ]; then
-          echo '<!DOCTYPE html><html><body><h1>CFdata Android Running</h1></body></html>' > index.html
+          echo '<!DOCTYPE html><html><head><meta charset="utf-8"><title>CFdata</title></head><body><h1>CFdata Android 后台已启动</h1></body></html>' > index.html
         fi
         
-        # 1. 修正包名
+        # 2. 将第一行的 package cfdata 修改为可独立编译成独立 APK 的 package main
         sed -i '1s/^package .*/package main/' cfdata.go
         
-        # 2. 注入标准依赖，不带斜杠地引入核心 lifecycle
-        sed -i '/import (/a \	"golang.org/x/mobile/app"\n	"golang.org/x/mobile/event/lifecycle"' cfdata.go
+        # 3. 在代码头部精确追加标准的移动端基础生命周期库导入
+        sed -i '/import (/a \	"golang.org/x/mobile/app"' cfdata.go
         
-        # 3. 把默认地址直接作为变量写进 Go 代码。彻底避免在 echo 里面传双引号和长链接触发红线！
+        # 4. 动态在文件末尾注入干净、纯粹、无版本兼容大坑的独立入口函数 func main()
+        # 将默认测速地址定义为反单引号变量，彻底杜绝所有双引号转义在 YAML 网页端引发的红线
         echo "" >> cfdata.go
         echo "var defaultURL = \`speed.cloudflare.com/__down?bytes=100000000\`" >> cfdata.go
         echo "func main() {" >> cfdata.go
         echo "	go StartServer(8080, defaultURL)" >> cfdata.go
         echo "	app.Main(func(a app.App) {" >> cfdata.go
-        echo "		for change := range a.Events() {" >> cfdata.go
-        echo "			switch e := a.Filter(change).(type) {" >> cfdata.go
-        echo "			case lifecycle.Event:" >> cfdata.go
-        echo "				if e.Crosses(lifecycle.StageFocused) == lifecycle.CrossWith {" >> cfdata.go
-        echo "					go func() {" >> cfdata.go
-        echo "						a.OpenURL(\`http://127.0.0.1:8080\`)" >> cfdata.go
-        echo "					}()" >> cfdata.go
-        echo "				}" >> cfdata.go
-        echo "			}" >> cfdata.go
-        echo "		}" >> cfdata.go
+        echo "		for range a.Events() {}" >> cfdata.go
         echo "	})" >> cfdata.go
         echo "}" >> cfdata.go
         
+        # 5. 清洗并补齐模块依赖
         go mod init cfdata_app
         go get github.com/gorilla/websocket
         go get golang.org/x/mobile/app
-        go get golang.org/x/mobile/event/lifecycle
         go mod tidy
         INNER_EOF
         
-        # 运行构建
+        # 跑脚本
         bash build.sh
 
     - name: Build Android APK
       run: |
         export PATH=$PATH:$(go env GOPATH)/bin
         export ANDROID_NDK_HOME=${{ env.ANDROID_NDK_HOME }}
+        
+        # 6. 开始整包编译
         gomobile build -target=android -androidapi=21 -o cfdata.apk .
 
     - name: Upload APK Artifact
