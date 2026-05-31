@@ -36,45 +36,36 @@ jobs:
         export ANDROID_NDK_HOME=${{ env.ANDROID_NDK_HOME }}
         gomobile init
 
-    - name: Prepare Pure Code Environment
+    - name: Run Build Script
       run: |
-        # 1. 彻底清除上几次残存的垃圾文件
+        # 核心解耦：让虚拟机现场生成独立脚本并执行，100% 避开 YAML 文件的语法高亮红线大坑
+        cat << 'INNER_EOF' > build.sh
+        #!/bin/bash
         rm -f go.mod go.sum main.go || true
-        
-        # 2. 强行将你的 cfdata.go 恢复到最干净的原始代码状态
         git checkout -- cfdata.go || true
-
-        # 3. 核心修复：防止 embed 找不到文件报错，若根目录下不存在 index.html 则自动创建一个
         if [ ! -f index.html ]; then
-          echo '<!DOCTYPE html><html><head><meta charset="utf-8"><title>CFdata</title></head><body><h1>CFdata Android 后台已启动</h1></body></html>' > index.html
+          echo '<!DOCTYPE html><html><body><h1>CFdata Android Running</h1></body></html>' > index.html
         fi
-
-        # 4. 将第一行的 package cfdata 强行修改为符合 APK 独立编译要求的 package main
         sed -i '1s/^package .*/package main/' cfdata.go
-
-        # 5. 终极无错追加：改用 Go 的反单引号包裹测速地址，从而在 YAML 脚本中彻底去除了所有的 [ \ ] 和 [ " ] 符号！
-        # 没有任何特殊转义，GitHub 网页端 100% 识别为纯文本，绝对不会再画红线！
         echo "" >> cfdata.go
         echo "func main() {" >> cfdata.go
-        echo "	go StartServer(8080, \`speed.cloudflare.com/__down?bytes=100000000\`)" >> cfdata.go
+        echo "	go StartServer(8080, \"speed.cloudflare.com/__down?bytes=100000000\")" >> cfdata.go
         echo "	golang.org/x/mobile/app.Main(func(a golang.org/x/mobile/app.App) {" >> cfdata.go
         echo "		for range a.Events() {}" >> cfdata.go
         echo "	})" >> cfdata.go
         echo "}" >> cfdata.go
-
-    - name: Initialize Modules
-      run: |
-        # 6. 重新生成并拉取依赖关系
         go mod init cfdata_app
         go get github.com/gorilla/websocket
         go mod tidy
+        INNER_EOF
+        
+        # 执行刚才生成的纯净构建脚本
+        bash build.sh
 
     - name: Build Android APK
       run: |
         export PATH=$PATH:$(go env GOPATH)/bin
         export ANDROID_NDK_HOME=${{ env.ANDROID_NDK_HOME }}
-        
-        # 7. 开始整包构建带核心后台逻辑的 APK
         gomobile build -target=android -androidapi=21 -o cfdata.apk .
 
     - name: Upload APK Artifact
