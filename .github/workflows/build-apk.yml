@@ -3,7 +3,10 @@ name: Build Android APK
 on:
   push:
     branches: [ "main" ]
-  workflow_dispatch:      # 允许你在网页上手动点击按钮触发编译
+  workflow_dispatch:      # 允许你在网页上一键手动点击触发编译
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true # 屏蔽 2026 年 Node 废弃警告
 
 jobs:
   build:
@@ -18,17 +21,18 @@ jobs:
       with:
         go-version: '1.22'
 
-    - name: Install Gomobile and Android SDK
+    - name: Install Gomobile and Android Environment
       run: |
+        # 安装官方移动编译工具
         go install golang.org/x/mobile/cmd/gomobile@latest
         go install golang.org/x/mobile/cmd/gobind@latest
         echo "PATH=$PATH:$(go env GOPATH)/bin" >> $GITHUB_ENV
         export PATH=$PATH:$(go env GOPATH)/bin
         gomobile init
 
-    - name: Initialize Go Module
+    - name: Configure Go Module and Pull Dependencies
       run: |
-        # 强制初始化为 main 模块
+        # 强制清理、初始化并补全 WebSocket 依赖包
         rm -f go.mod go.sum || true
         go mod init cfdata
         go get github.com/gorilla/websocket
@@ -37,10 +41,10 @@ jobs:
     - name: Build Android APK
       run: |
         export PATH=$PATH:$(go env GOPATH)/bin
-        # 编译当前 main 包为独立的安卓应用程序
+        # 正式开始对当前 package main 目录编译成安卓 APK 独立应用
         gomobile build -target=android -o cfdata.apk .
 
-    - name: Upload Artifact
+    - name: Upload Finished APK
       uses: actions/upload-artifact@v4
       with:
         name: cfdata-apk
