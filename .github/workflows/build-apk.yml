@@ -43,27 +43,21 @@ jobs:
       run: |
         gomobile init
 
-    # 6. 【核心黑科技】云端热修复：把 package cfdata 变成 package main，并追加 main 入口
-    # 这样既不污染你本地的代码，又能骗过 gomobile 让它乖乖编译
+    # 6. 【精准热修复】严格按照 want (int, string) 的要求传入两个参数
     - name: Patch Package to Main
       run: |
         # 将第一行的 package cfdata 替换为 package main
         sed -i 's/package cfdata/package main/g' cfdata.go
         
-        # 在 cfdata.go 的末尾追加一个合法的 main 函数入口，去启动你的服务
-        # 假设你的服务是通过 StartServer 启动的（或者是项目里其他的启动函数）
-        echo -e "\nfunc main() {\n\t// 这里的端口可以根据你的 index.html 匹配，通常混合应用在手机端后台盲跑\n\tStartServer(\"127.0.0.1:8080\")\n}" >> cfdata.go
+        # 精准匹配你底层的 func StartServer(port int, host string) 传入 8080 和 "127.0.0.1"
+        echo -e "\nfunc main() {\n\tStartServer(8080, \"127.0.0.1\")\n}" >> cfdata.go
         
-        echo "=== 检查修改后的 Go 文件前几行 ==="
-        head -n 5 cfdata.go
         echo "=== 检查修改后的 Go 文件末尾几行 ==="
         tail -n 10 cfdata.go
 
     # 7. 融合 main 文件夹里的安卓资源，直接编译成最终 APK
     - name: Build APK via Go Mobile
       run: |
-        # -androidapi 21 解决 NDK 版本冲突
-        # . 代表编译当前根目录
         gomobile build -target=android -androidapi 21 -o cfdata.apk .
 
     # 8. 上传生成的 APK 安装包
