@@ -38,28 +38,38 @@ jobs:
 
     - name: Run Build Script
       run: |
-        # 核心解耦：让虚拟机现场生成独立脚本并执行，100% 避开 YAML 文件的语法高亮红线大坑
+        # 使用 INNER_EOF 完美隔离，网页端 100% 浅灰色无红线
         cat << 'INNER_EOF' > build.sh
         #!/bin/bash
         rm -f go.mod go.sum main.go || true
         git checkout -- cfdata.go || true
+        
         if [ ! -f index.html ]; then
           echo '<!DOCTYPE html><html><body><h1>CFdata Android Running</h1></body></html>' > index.html
         fi
+        
+        # 1. 修正包名为 package main
         sed -i '1s/^package .*/package main/' cfdata.go
+        
+        # 2. 关键修复：利用 sed 在原本的 import 块中插入标准的 app 依赖，避免直接写入带斜杠的路径
+        sed -i '/import (/a \	"golang.org/x/mobile/app"' cfdata.go
+        
+        # 3. 在文件末尾追加纯正、标准的 func main 入口
         echo "" >> cfdata.go
         echo "func main() {" >> cfdata.go
         echo "	go StartServer(8080, \"speed.cloudflare.com/__down?bytes=100000000\")" >> cfdata.go
-        echo "	golang.org/x/mobile/app.Main(func(a golang.org/x/mobile/app.App) {" >> cfdata.go
+        echo "	app.Main(func(a app.App) {" >> cfdata.go
         echo "		for range a.Events() {}" >> cfdata.go
         echo "	})" >> cfdata.go
         echo "}" >> cfdata.go
+        
         go mod init cfdata_app
         go get github.com/gorilla/websocket
+        go get golang.org/x/mobile/app
         go mod tidy
         INNER_EOF
         
-        # 执行刚才生成的纯净构建脚本
+        # 执行生成的构建脚本
         bash build.sh
 
     - name: Build Android APK
