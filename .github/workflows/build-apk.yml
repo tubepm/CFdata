@@ -46,10 +46,12 @@ jobs:
         # 3. 将第一行的 package cfdata 变更为标准的 package main，满足编译独立 APK 的铁律
         sed -i '1s/^package .*/package main/' cfdata.go
         
-        # 4. 关键对齐：如果你的 cfdata.go 里本身没有编写 func main() 入口，我们只在最末尾静默追加一个，
-        # 并用 Go 的反单引号作为测速链接参数，彻底避开 YAML 网页端的所有转义高亮大坑，全站零红线！
+        # 4. 终极闭环补齐：在最末尾静默追加一个匿名 import 块和主入口
+        # 利用 Go 语言的 _ "golang.org/x/mobile/app" 满足 gomobile 的硬性编译条件
+        # 同时利用反单引号作为测速链接参数，彻底避开 YAML 网页端的所有转义高亮大坑，全站零红线！
         if ! grep -q "func main()" cfdata.go; then
           echo "" >> cfdata.go
+          echo "import _ \`golang.org/x/mobile/app\`" >> cfdata.go
           echo "func main() {" >> cfdata.go
           echo "	StartServer(8080, \`speed.cloudflare.com/__down?bytes=100000000\`)" >> cfdata.go
           echo "}" >> cfdata.go
@@ -57,9 +59,10 @@ jobs:
 
     - name: Initialize Modules
       run: |
-        # 5. 用主模块环境重新梳理依赖链
+        # 5. 用主模块环境重新梳理依赖链并拉取必要依赖
         go mod init main
         go get github.com/gorilla/websocket
+        go get golang.org/x/mobile/app
         go mod tidy
 
     - name: Build Android APK
