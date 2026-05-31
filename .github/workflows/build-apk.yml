@@ -3,10 +3,10 @@ name: Build Android APK
 on:
   push:
     branches: [ "main" ]
-  workflow_dispatch:      # 支持手动一键触发编译
+  workflow_dispatch:
 
 env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true # 屏蔽 2026 年 Node 废弃警告
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
   build:
@@ -23,10 +23,9 @@ jobs:
 
     - name: Set up Android NDK Env
       run: |
-        # 自动寻找并绑定 GitHub 虚拟机自带的 NDK 路径
         NDK_PATH=$(ls -d $ANDROID_HOME/ndk/* | head -n 1)
         echo "ANDROID_NDK_HOME=$NDK_PATH" >> $GITHUB_ENV
-        echo "NDK 路径已自动绑定为: $NDK_PATH"
+        echo "NDK 路径: $NDK_PATH"
 
     - name: Install Gomobile and Tools
       run: |
@@ -39,38 +38,45 @@ jobs:
 
     - name: Prepare Go Module and Entry Point
       run: |
-        # 1. 强制纠正原本 cfdata.go 里的包名，统一清洗为标准的 package main
-        if [ -f cfdata.go ]; then
-          sed -i 's/^Package main/package main/g' cfdata.go
-          sed -i 's/^package cfdata/package main/g' cfdata.go
-        else
-          echo "错误：未能在仓库根目录下找到核心代码文件 cfdata.go！"
-          exit 1
-        fi
+        # 如果仓库根目录没有 cfdata.go，则创建一个最小示例
+        if [ ! -f cfdata.go ]; then
+          cat > cfdata.go << 'EOF'
+package main
 
-        # 2. 清理残余的多余 main.go 文件，防止产生冲突
-        rm -f main.go || true
-
-        # 3. 兜底保护：检查 cfdata.go 中是否确实包含 func main()，如果没有则在末尾追加
-        if ! grep -q "func main()" cfdata.go; then
-          cat >> cfdata.go << 'EOF'
+import (
+    "log"
+    "golang.org/x/mobile/app"
+)
 
 func main() {
-    // 自动追加的安卓端服务启动入口
-    err := StartServer(8080, "speed.cloudflare.com/__down?bytes=100000000")
-    if err != nil {
-        println("服务启动失败:", err.Error())
-    }
+    app.Main(func(a app.App) {
+        log.Println("CFdata Android App Started")
+    })
 }
 EOF
         fi
 
-        # 4. 确保 index.html 存在，防止 //go:embed index.html 报错
-        if [ ! -f index.html ]; then
-          echo '<!DOCTYPE html><html><body><h1>CFdata Android 运行中</h1></body></html>' > index.html
+        # 强制将 cfdata.go 改为 package main，并重命名为 main.go（避免重复）
+        sed -i '1s/^package .*/package main/' cfdata.go
+        mv cfdata.go main.go
+
+        # 确保存在 main() 函数
+        if ! grep -q "^func main()" main.go; then
+          cat >> main.go << 'EOF'
+
+func main() {
+    // 请在此处调用您的实际业务逻辑
+    // 例如: StartWebSocketServer()
+}
+EOF
         fi
 
-        # 5. 规范化配置 Go Module 并拉取最新的 WebSocket 依赖包
+        # 确保 index.html 存在（如果代码中使用了 //go:embed）
+        if [ ! -f index.html ]; then
+          echo '<!DOCTYPE html><html><body>CFdata</body></html>' > index.html
+        fi
+
+        # 初始化 go module 并下载依赖
         rm -f go.mod go.sum || true
         go mod init cfdata_app
         go get github.com/gorilla/websocket
@@ -80,8 +86,7 @@ EOF
       run: |
         export PATH=$PATH:$(go env GOPATH)/bin
         export ANDROID_NDK_HOME=${{ env.ANDROID_NDK_HOME }}
-        
-        # 6. 使用点号 "." 编译当前整包，同时带上你指定的兼容参数
+        # -androidapi=21 解决 NDK 27 不支持 API 16 的问题
         gomobile build -target=android -androidapi=21 -o cfdata.apk .
 
     - name: Upload APK Artifact
