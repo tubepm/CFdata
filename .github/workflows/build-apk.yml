@@ -3,10 +3,10 @@ name: Build Android APK
 on:
   push:
     branches: [ "main" ]
-  workflow_dispatch:      # 支持手动一键触发编译
+  workflow_dispatch:
 
 env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true # 屏蔽 Node 废弃警告
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
   build:
@@ -23,10 +23,9 @@ jobs:
 
     - name: Set up Android NDK Env
       run: |
-        # 自动寻找并绑定 GitHub 虚拟机自带的 NDK 路径
         NDK_PATH=$(ls -d $ANDROID_HOME/ndk/* | head -n 1)
         echo "ANDROID_NDK_HOME=$NDK_PATH" >> $GITHUB_ENV
-        echo "NDK 路径已自动绑定为: $NDK_PATH"
+        echo "NDK 路径已设为: $NDK_PATH"
 
     - name: Install Gomobile and Tools
       run: |
@@ -37,44 +36,42 @@ jobs:
         export ANDROID_NDK_HOME=${{ env.ANDROID_NDK_HOME }}
         gomobile init
 
-    - name: Pure Rebuild Environment
+    - name: Prepare Pure Environment
       run: |
-        # 1. 彻底清除目录下的干扰文件，防止旧编译缓存或重复定义报错
         rm -f go.mod go.sum main.go index.html || true
         
-        # 2. 如果 cfdata.go 存在，先移除它的 package 声明行（防止多余的 package main 冲突）
         if [ -f cfdata.go ]; then
-          # 移除首行的 package 声明，下面我们会统一生成
           sed -i '/^package /d' cfdata.go
           sed -i '/^Package /d' cfdata.go
         fi
 
-        # 3. 强行原地创建一个标准的编译主入口 main.go
+    - name: Create Main File
+      run: |
         cat > main.go << 'EOF'
-package main
+        package main
+        
+        import (
+        	"embed"
+        	"log"
+        	"golang.org/x/mobile/app"
+        )
+        
+        //go:embed index.html
+        var fsys embed.FS
+        
+        func main() {
+        	app.Main(func(a app.App) {
+        		log.Println("App started")
+        	})
+        }
+        EOF
 
-import (
-	"embed"
-	"log"
-	"golang.org/x/mobile/app"
-)
+    - name: Create HTML File
+      run: |
+        echo '<!DOCTYPE html><html><body>CFdata Android</body></html>' > index.html
 
-//go:embed index.html
-var fsys embed.FS
-
-func main() {
-	app.Main(func(a app.App) {
-		log.Println("Gomobile App Started")
-		// 这里会自动编译并拉起你 cfdata.go 里的核心逻辑
-		// 如果你的核心启动函数叫 StartServer，它会被完美调用
-	})
-}
-EOF
-
-        # 4. 强制生成一个 index.html，100% 保证 //go:embed 不会因为找不到文件而报错
-        echo '<!DOCTYPE html><html><body><h1>CFdata Android Service Running</h1></body></html>' > index.html
-
-        # 5. 规范化重新初始化 Go 模块与拉取依赖
+    - name: Initialize Modules
+      run: |
         go mod init cfdata_app
         go get github.com/gorilla/websocket
         go mod tidy
@@ -83,8 +80,6 @@ EOF
       run: |
         export PATH=$PATH:$(go env GOPATH)/bin
         export ANDROID_NDK_HOME=${{ env.ANDROID_NDK_HOME }}
-        
-        # 6. 使用当前整包编译，并强制指定支持 API 21 规避 NDK 27 的不兼容问题
         gomobile build -target=android -androidapi=21 -o cfdata.apk .
 
     - name: Upload APK Artifact
