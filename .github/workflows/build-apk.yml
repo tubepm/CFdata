@@ -133,6 +133,32 @@ jobs:
       with:
         name: cloudflare-ip-data-apk
         path: main/build/outputs/apk/debug/*.apk
+        }
+        dependencies {
+            implementation files('libs/cfdata.aar')
+            implementation 'androidx.core:core-ktx:1.12.0'
+            implementation 'androidx.appcompat:appcompat:1.6.1'
+            implementation 'com.google.android.material:material:1.11.0'
+            implementation 'androidx.constraintlayout:constraintlayout:2.1.4'
+        }
+        APP_EOF
+
+    # 8. 一键生成官方独立的 Gradle 8.4 包装器 (Wrapper) 
+    - name: Setup Independent Gradle Wrapper
+      run: |
+        gradle wrapper --gradle-version 8.4 --distribution-type bin
+
+    # 9. 使用全新的本地包装器执行无打断编译
+    - name: Build APK with Gradle Wrapper
+      run: |
+        ./gradlew :main:assembleDebug -x lint -x test --warning-mode none
+
+    # 10. 收集并上传最终生成的 APK 安装包
+    - name: Upload APK Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: cloudflare-ip-data-apk
+        path: main/build/outputs/apk/debug/*.apk
         
         # 4. 精准引入，彻底移除带有特殊符号的全局降级闭包
         echo "dependencies {" >> main/build.gradle
