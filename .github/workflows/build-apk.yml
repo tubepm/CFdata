@@ -13,6 +13,14 @@ jobs:
     - name: Checkout Code
       uses: actions/checkout@v4
 
+    - name: Reorganize Project Structure
+      run: |
+        # 将非标准结构调整为标准 Android 模块结构
+        mkdir -p main/src/main
+        mv main/AndroidManifest.xml main/src/main/ 2>/dev/null || true
+        mv main/java main/src/main/ 2>/dev/null || true
+        mv main/res main/src/main/ 2>/dev/null || true
+
     - name: Set up Go
       uses: actions/setup-go@v5
       with:
@@ -74,7 +82,6 @@ jobs:
         }
         EOF
         
-        mkdir -p main
         cat << 'EOF' > main/build.gradle
         plugins {
             id 'com.android.application'
@@ -107,6 +114,20 @@ jobs:
             implementation(name: 'cfdata', ext: 'aar')
             implementation 'androidx.core:core-ktx:1.12.0'
             implementation 'androidx.appcompat:appcompat:1.6.1'
+        }
+        EOF
+
+        gradle wrapper --gradle-version 8.2 --distribution-type bin
+
+    - name: Build APK with Gradle
+      run: |
+        ./gradlew :main:assembleDebug --stacktrace -x lint -x test --warning-mode none --no-daemon
+
+    - name: Upload APK
+      uses: actions/upload-artifact@v4
+      with:
+        name: cloudflare-ip-data-apk
+        path: main/build/outputs/apk/debug/*.apk
         }
         EOF
 
