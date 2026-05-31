@@ -20,7 +20,7 @@ jobs:
       with:
         go-version: '1.25.0'
 
-    # 3. 设置 Java 环境 (Android NDK 必备底座)
+    # 3. 设置 Java 环境 (使用最稳健的 JDK 17)
     - name: Set up JDK 17
       uses: actions/setup-java@v4
       with:
@@ -43,35 +43,83 @@ jobs:
       run: |
         gomobile init
 
-    # 6. 【安全修改】动态修复源码包名，并安全追加主入口函数
-    - name: Inject Android App Lifecycle into Go
+    # 6. 将你的 cfdata 编译绑定为标准的安卓原生插件包 (.aar)
+    - name: Bind Go to Android Library
       run: |
-        # 1. 强行把 package cfdata 替换成 package main
-        sed -i 's/package cfdata/package main/g' cfdata.go
-        
-        # 2. 使用最安全的单行 echo 方式追加代码，彻底规避多行文本导致的 YAML 语法拦截
-        echo "" >> cfdata.go
-        echo 'import "golang.org/x/mobile/app"' >> cfdata.go
-        echo "" >> cfdata.go
-        echo "func main() {" >> cfdata.go
-        echo "	go StartServer(8080, \"127.0.0.1\")" >> cfdata.go
-        echo "	app.Main(func(a app.App) {" >> cfdata.go
-        echo "		for range a.Events() {" >> cfdata.go
-        echo "		}" >> cfdata.go
-        echo "	})" >> cfdata.go
-        echo "}" >> cfdata.go
-        
-        echo "=== 检查修改后的 Go 文件末尾 15 行 ==="
-        tail -n 15 cfdata.go
+        mkdir -p main/libs
+        gomobile bind -target=android/arm64 -androidapi 21 -o main/libs/cfdata.aar .
 
-    # 7. 越过所有 Gradle 垃圾配置，直接使用 Go 交叉编译引擎生成 APK！
-    - name: Pure Go Build APK
+    # 7. 【核心补全】同时生成根目录配置与子目录配置，彻底解决 compileSdkVersion 为 16 的硬伤
+    - name: Auto Generate Top-Level and App Gradle Files
       run: |
-        gomobile build -target=android -androidapi 21 -o cfdata.apk .
+        # 1. 在项目真正的根目录生成 settings.gradle，把 main 作为子模块关联进来
+        echo "pluginManagement {" > settings.gradle
+        echo "    repositories {" >> settings.gradle
+        echo "        google()" >> settings.gradle
+        echo "        mavenCentral()" >> settings.gradle
+        echo "        gradlePluginPortal()" >> settings.gradle
+        echo "    }" >> settings.gradle
+        echo "}" >> settings.gradle
+        echo "dependencyResolutionManagement {" >> settings.gradle
+        echo "    repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)" >> settings.gradle
+        echo "    repositories {" >> settings.gradle
+        echo "        google()" >> settings.gradle
+        echo "        mavenCentral()" >> settings.gradle
+        echo "        flatDir { dirs 'main/libs' }" >> settings.gradle
+        echo "    }" >> settings.gradle
+        echo "}" >> settings.gradle
+        echo "include ':main'" >> settings.gradle
+        
+        # 2. 在项目真正的根目录生成主 build.gradle，配置全局依赖版本
+        echo "plugins {" > build.gradle
+        echo "    id 'com.android.application' version '8.2.2' apply false" >> build.gradle
+        echo "    id 'org.jetbrains.kotlin.android' version '1.9.22' apply false" >> build.gradle
+        echo "}" >> build.gradle
+        
+        # 3. 重新规范化 main 子目录下的 build.gradle，剔除冗余的版本号避免和根目录冲突
+        echo "plugins {" > main/build.gradle
+        echo "    id 'com.android.application'" >> main/build.gradle
+        echo "    id 'org.jetbrains.kotlin.android'" >> main/build.gradle
+        echo "}" >> main/build.gradle
+        echo "android {" >> main/build.gradle
+        echo "    namespace 'com.cfdata'" >> main/build.gradle
+        echo "    compileSdk 34" >> main/build.gradle
+        echo "    defaultConfig {" >> main/build.gradle
+        echo "        applicationId 'com.cfdata'" >> main/build.gradle
+        echo "        minSdk 21" >> main/build.gradle
+        echo "        targetSdk 34" >> main/build.gradle
+        echo "        versionCode 1" >> main/build.gradle
+        echo "        versionName '1.0'" >> main/build.gradle
+        echo "    }" >> main/build.gradle
+        echo "    buildTypes {" >> main/build.gradle
+        echo "        release {" >> main/build.gradle
+        echo "            minifyEnabled false" >> main/build.gradle
+        echo "        }" >> main/build.gradle
+        echo "    }" >> main/build.gradle
+        echo "    compileOptions {" >> main/build.gradle
+        echo "        sourceCompatibility JavaVersion.VERSION_17" >> main/build.gradle
+        echo "        targetCompatibility JavaVersion.VERSION_17" >> main/build.gradle
+        echo "    }" >> main/build.gradle
+        echo "    kotlinOptions {" >> main/build.gradle
+        echo "        jvmTarget = '17'" >> main/build.gradle
+        echo "    }" >> main/build.gradle
+        echo "}" >> main/build.gradle
+        echo "dependencies {" >> main/build.gradle
+        echo "    implementation fileTree(dir: 'libs', include: ['*.aar'])" >> main/build.gradle
+        echo "    implementation 'androidx.core:core-ktx:1.12.0'" >> main/build.gradle
+        echo "    implementation 'androidx.appcompat:appcompat:1.6.1'" >> main/build.gradle
+        echo "    implementation 'com.google.android.material:material:1.11.0'" >> main/build.gradle
+        echo "    implementation 'androidx.constraintlayout:constraintlayout:2.1.4'" >> main/build.gradle
+        echo "}" >> main/build.gradle
 
-    # 8. 上传最终生成的 APK 安装包
+    # 8. 真正的安卓工程一键编译（直接在根目录发起，全自动向下融合 main）
+    - name: Build APK with Gradle
+      run: |
+        gradle :main:assembleDebug -x lint -x test --warning-mode none
+
+    # 9. 收集最终生成的精美 APK 安装包
     - name: Upload APK Artifact
       uses: actions/upload-artifact@v4
       with:
         name: cloudflare-ip-data-apk
-        path: cfdata.apk
+        path: main/build/outputs/apk/debug/*.apk
