@@ -25,7 +25,7 @@ jobs:
       run: |
         NDK_PATH=$(ls -d $ANDROID_HOME/ndk/* | head -n 1)
         echo "ANDROID_NDK_HOME=$NDK_PATH" >> $GITHUB_ENV
-        echo "NDK path: $NDK_PATH"
+        echo "NDK 路径: $NDK_PATH"
 
     - name: Install Gomobile and Tools
       run: |
@@ -38,23 +38,42 @@ jobs:
 
     - name: Prepare Go Module and Entry Point
       run: |
-        if [ ! -f cfdata.go ]; then echo 'package main' > cfdata.go; echo '' >> cfdata.go; echo 'func main() {}' >> cfdata.go; fi
-        sed -i '1s/^package .*/package main/' cfdata.go
-        echo 'package main' > main.go
-        echo '' >> main.go
-        echo 'import (' >> main.go
-        echo '    "log"' >> main.go
-        echo '    "golang.org/x/mobile/app"' >> main.go
-        echo ')' >> main.go
-        echo '' >> main.go
-        echo 'func main() {' >> main.go
-        echo '    app.Main(func(a app.App) {' >> main.go
-        echo '        log.Println("CFdata Android App Started")' >> main.go
-        echo '        // TODO: call your business logic, e.g., Run()' >> main.go
-        echo '    })' >> main.go
-        echo '}' >> main.go
-        cat cfdata.go >> main.go
-        if [ ! -f index.html ]; then echo '<!DOCTYPE html><html><body>CFdata</body></html>' > index.html; fi
+        # 1. 确保 cfdata.go 存在，如果不存在则创建最小示例
+        if [ ! -f cfdata.go ]; then
+          echo 'package cfdata' > cfdata.go
+          echo '' >> cfdata.go
+          echo 'func Start() { println("CFdata started") }' >> cfdata.go
+        fi
+
+        # 2. 强制将 cfdata.go 改为 package cfdata（不是 main）
+        sed -i '1s/^package .*/package cfdata/' cfdata.go
+
+        # 3. 生成一个符合 gomobile 要求的 main.go 入口
+        cat > main.go << 'EOF'
+package main
+
+import (
+    "log"
+    "cfdata_app/cfdata"
+    "golang.org/x/mobile/app"
+)
+
+func main() {
+    app.Main(func(a app.App) {
+        log.Println("CFdata Android App 启动")
+        // 尝试调用 cfdata 包中的启动函数
+        // 请根据您的实际函数名修改下面这一行（例如 Run()、Start()、Scan() 等）
+        cfdata.Start()
+    })
+}
+EOF
+
+        # 4. 确保 index.html 存在（防止 //go:embed 报错）
+        if [ ! -f index.html ]; then
+          echo '<!DOCTYPE html><html><body>CFdata</body></html>' > index.html
+        fi
+
+        # 5. 初始化 go.mod（模块名必须与 import 中的路径匹配）
         rm -f go.mod go.sum || true
         go mod init cfdata_app
         go get github.com/gorilla/websocket
