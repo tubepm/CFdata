@@ -42,9 +42,9 @@ jobs:
         # 1. 强制将首字母大写 Package 替换为标准小写 package，防止任何手误隐患
         sed -i 's/^Package main/package main/g' cfdata.go
         
-        # 2. 规范化初始化依赖关系
+        # 2. 规范化初始化依赖关系，并将模块直接命名为 main
         rm -f go.mod go.sum || true
-        go mod init cfdata
+        go mod init main
         go get github.com/gorilla/websocket
         go mod tidy
 
@@ -53,8 +53,8 @@ jobs:
         export PATH=$PATH:$(go env GOPATH)/bin
         export ANDROID_NDK_HOME=${{ env.ANDROID_NDK_HOME }}
         
-        # 核心修复：显式指定编译 cfdata.go 文件，不再使用模糊的 "." 路径，彻底解决 undefined 错误
-        gomobile build -target=android -o cfdata.apk cfdata.go
+        # 终极修复：使用 main 模块整体打包，既能找到 main 函数，又能把 index.html 完美嵌入！
+        gomobile build -target=android -o cfdata.apk main
         
     - name: Upload Finished APK Artifact
       uses: actions/upload-artifact@v4
