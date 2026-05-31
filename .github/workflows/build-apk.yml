@@ -44,29 +44,28 @@ jobs:
 
     - name: Prepare source code
       run: |
-        # 1. 使用仓库中的 cfdata.go（已修改为无 embed 版本）
-        # 确保 package 是 cfdata
+        # 1. 确保 cfdata.go 是 package cfdata
         sed -i '1s/^package .*/package cfdata/' cfdata.go
 
-        # 2. 创建 main.go 作为 Android 入口
-        cat > main.go << 'MAIN_EOF'
-        package main
+        # 2. 创建 main.go 作为 Android 入口（注意：不能有缩进！）
+        cat > main.go << 'EOF'
+package main
 
-        import (
-            "log"
-            "cfdata_app/cfdata"
-            "golang.org/x/mobile/app"
-        )
+import (
+    "log"
+    "cfdata_app/cfdata"
+    "golang.org/x/mobile/app"
+)
 
-        func main() {
-            app.Main(func(a app.App) {
-                log.Println("App started")
-                cfdata.StartServer(8080, "")
-            })
-        }
-        MAIN_EOF
+func main() {
+    app.Main(func(a app.App) {
+        log.Println("App started")
+        cfdata.StartServer(8080, "")
+    })
+}
+EOF
 
-        # 3. 创建占位 index.html（gomobile 构建需要文件存在）
+        # 3. 创建占位 index.html
         if [ ! -f index.html ]; then
           echo '<html><body>CFdata</body></html>' > index.html
         fi
