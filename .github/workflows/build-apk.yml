@@ -20,7 +20,7 @@ jobs:
       with:
         go-version: '1.25.0'
 
-    # 3. 设置 Java 环境 (使用最稳健的 JDK 17)
+    # 3. 设置 Java 环境 (JDK 17 是 Gradle 8.4 的完美绝配)
     - name: Set up JDK 17
       uses: actions/setup-java@v4
       with:
@@ -49,10 +49,10 @@ jobs:
         mkdir -p main/libs
         gomobile bind -target=android/arm64 -androidapi 21 -o main/libs/cfdata.aar .
 
-    # 7. 全自动补全大项目 Gradle 地基（带有版本强制锁定和彻底屏蔽错误功能）
+    # 7. 全自动补全标准的 Android 多项目依赖地基
     - name: Auto Generate Top-Level and App Gradle Files
       run: |
-        # 1. 在项目真正的根目录生成 settings.gradle
+        # 1. 在项目根目录生成全局关联设置 settings.gradle
         echo "pluginManagement {" > settings.gradle
         echo "    repositories {" >> settings.gradle
         echo "        google()" >> settings.gradle
@@ -70,13 +70,13 @@ jobs:
         echo "}" >> settings.gradle
         echo "include ':main'" >> settings.gradle
         
-        # 2. 在项目真正的根目录生成主 build.gradle
+        # 2. 在项目根目录生成主 build.gradle，指定安卓构建插件 AGP 版本为最稳固的 8.1.4
         echo "plugins {" > build.gradle
-        echo "    id 'com.android.application' version '8.2.2' apply false" >> build.gradle
-        echo "    id 'org.jetbrains.kotlin.android' version '1.9.22' apply false" >> build.gradle
+        echo "    id 'com.android.application' version '8.1.4' apply false" >> build.gradle
+        echo "    id 'org.jetbrains.kotlin.android' version '1.8.20' apply false" >> build.gradle
         echo "}" >> build.gradle
         
-        # 3. 重新规范化 main 子目录下的 build.gradle
+        # 3. 生成 main 子目录下的 build.gradle
         echo "plugins {" > main/build.gradle
         echo "    id 'com.android.application'" >> main/build.gradle
         echo "    id 'org.jetbrains.kotlin.android'" >> main/build.gradle
@@ -103,38 +103,31 @@ jobs:
         echo "    kotlinOptions {" >> main/build.gradle
         echo "        jvmTarget = '17'" >> main/build.gradle
         echo "    }" >> main/build.gradle
-        
-        # 【强力降级容错】：彻底关闭一切可能中断构建的严格校验和报错提示
         echo "    lint {" >> main/build.gradle
         echo "        abortOnError false" >> main/build.gradle
         echo "        checkReleaseBuilds false" >> main/build.gradle
         echo "    }" >> main/build.gradle
         echo "}" >> main/build.gradle
-        
-        # 4. 精简依赖，并强制锁定版本防止依赖树传递冲突
         echo "dependencies {" >> main/build.gradle
         echo "    implementation fileTree(dir: 'libs', include: ['*.aar'])" >> main/build.gradle
-        echo "    implementation 'androidx.core:core-ktx:1.12.0'" >> main/build.gradle
+        echo "    implementation 'androidx.core:core-ktx:1.10.1'" >> main/build.gradle
         echo "    implementation 'androidx.appcompat:appcompat:1.6.1'" >> main/build.gradle
-        echo "    implementation 'com.google.android.material:material:1.11.0'" >> main/build.gradle
+        echo "    implementation 'com.google.android.material:material:1.9.0'" >> main/build.gradle
         echo "    implementation 'androidx.constraintlayout:constraintlayout:2.1.4'" >> main/build.gradle
         echo "}" >> main/build.gradle
-        
-        # 【终极补丁】：强制统合可能产生冲突的所有旧版 transitive 依赖
-        echo "configurations.all {" >> main/build.gradle
-        echo "    resolutionStrategy.eachDependency { DependencyResolveDetails details ->" >> main/build.gradle
-        echo "        if (details.requested.group == 'androidx.annotation') {" >> main/build.gradle
-        echo "            details.useVersion '1.7.1'" >> main/build.gradle
-        echo "        }" >> main/build.gradle
-        echo "    }" >> main/build.gradle
-        echo "}" >> main/build.gradle
 
-    # 8. 真正的安卓工程一键编译（加入容错标志，不给机器人任何报错打断的机会）
-    - name: Build APK with Gradle
+    # 8. 【核弹级绝杀】在当前目录一键生成官方独立的 Gradle 8.4 包装器 (Wrapper)
+    # 彻底架空并抛弃系统全局那傲娇、脆弱的 9.5.1
+    - name: Setup Independent Gradle Wrapper
       run: |
-        gradle :main:assembleDebug --stacktrace -x lint -x test --warning-mode none
+        gradle wrapper --gradle-version 8.4 --distribution-type bin
 
-    # 9. 收集最终生成的精美 APK 安装包
+    # 9. 使用全新的、完全独立的、带绝对容错标识的本地包装器命令一键强行打包
+    - name: Build APK with Gradle Wrapper
+      run: |
+        ./gradlew :main:assembleDebug --stacktrace --info -x lint -x test --warning-mode none
+
+    # 10. 收集最终生成的精美 APK 安装包
     - name: Upload APK Artifact
       uses: actions/upload-artifact@v4
       with:
