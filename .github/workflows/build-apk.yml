@@ -135,6 +135,34 @@ jobs:
       with:
         name: cloudflare-ip-data-apk
         path: main/build/outputs/apk/debug/*.apk
+                targetCompatibility JavaVersion.VERSION_17
+            }
+            kotlinOptions {
+                jvmTarget = '17'
+            }
+        }
+        
+        dependencies {
+            implementation fileTree(dir: 'libs', include: ['*.aar'])
+            implementation 'androidx.core:core-ktx:1.9.0'
+            implementation 'androidx.appcompat:appcompat:1.6.1'
+            implementation 'com.google.android.material:material:1.8.0'
+            implementation 'androidx.constraintlayout:constraintlayout:2.1.4'
+        }
+        EOF
+
+    # 9. 执行打包 (调用刚刚下载的稳定的 gradle 8.0 纯净命令)
+    - name: Build APK with Gradle 8.0
+      run: |
+        cd main
+        gradle assembleDebug --warning-mode none -x lint
+
+    # 10. 收集最终生成的精美 APK 安装包
+    - name: Upload APK Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: cloudflare-ip-data-apk
+        path: main/build/outputs/apk/debug/*.apk
         }
         
         dependencies {
