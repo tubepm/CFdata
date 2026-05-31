@@ -46,12 +46,14 @@ jobs:
         # 3. 将第一行的 package cfdata 变更为标准的 package main，满足编译独立 APK 的铁律
         sed -i '1s/^package .*/package main/' cfdata.go
         
-        # 4. 终极闭环补齐：在最末尾静默追加一个匿名 import 块和主入口
-        # 利用 Go 语言的 _ "golang.org/x/mobile/app" 满足 gomobile 的硬性编译条件
-        # 同时利用反单引号作为测速链接参数，彻底避开 YAML 网页端的所有转义高亮大坑，全站零红线！
+        # 4. 关键修复：利用 sed 将 gomobile 所需的移动端底层依赖精准插入到第二行（紧跟在 package main 下方）
+        # 完美解决 "imports must appear before other declarations" 的 Go 严格语法限制！
+        sed -i '1a import _ "golang.org/x/mobile/app"' cfdata.go
+        
+        # 5. 如果你的代码里本身没有编写 func main() 入口，我们在最末尾安全地追加一个
+        # 改用 Go 语言天然支持的十六进制或不带任何转义的字符，彻底避免在 echo 里面传双引号和长链接触发网页红线！
         if ! grep -q "func main()" cfdata.go; then
           echo "" >> cfdata.go
-          echo "import _ \`golang.org/x/mobile/app\`" >> cfdata.go
           echo "func main() {" >> cfdata.go
           echo "	StartServer(8080, \`speed.cloudflare.com/__down?bytes=100000000\`)" >> cfdata.go
           echo "}" >> cfdata.go
@@ -59,7 +61,7 @@ jobs:
 
     - name: Initialize Modules
       run: |
-        # 5. 用主模块环境重新梳理依赖链并拉取必要依赖
+        # 6. 用主模块环境重新梳理依赖链并拉取必要依赖
         go mod init main
         go get github.com/gorilla/websocket
         go get golang.org/x/mobile/app
@@ -70,7 +72,7 @@ jobs:
         export PATH=$PATH:$(go env GOPATH)/bin
         export ANDROID_NDK_HOME=${{ env.ANDROID_NDK_HOME }}
         
-        # 6. 开始整包构建，输出带你最新功能的完整成品 APK
+        # 7. 开始整包构建，输出带你最新功能的完整成品 APK
         gomobile build -target=android -androidapi=21 -o cfdata.apk .
 
     - name: Upload APK Artifact
