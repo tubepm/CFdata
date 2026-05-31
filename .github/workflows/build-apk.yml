@@ -1,0 +1,49 @@
+name: Build Android APK
+
+on:
+  push:
+    branches: [ "main" ] # 当你向 main 分支推送代码时自动触发编译
+  workflow_dispatch:      # 允许你在网页上手动点击按钮触发编译
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout Code
+      uses: actions/checkout@v4
+
+    - name: Set up Go
+      uses: actions/setup-go@v5
+      with:
+        go-version: '1.22' # 匹配你的 Go 语言版本
+
+    - name: Install Gomobile and Android SDK
+      run: |
+        # 安装 Go 移动端编译工具
+        go install golang.org/x/mobile/cmd/gomobile@latest
+        go install golang.org/x/mobile/cmd/gobind@latest
+        # 初始化 gomobile 环境
+        echo "PATH=$PATH:$(go env GOPATH)/bin" >> $GITHUB_ENV
+        export PATH=$PATH:$(go env GOPATH)/bin
+        gomobile init
+
+    - name: Get Dependencies
+      run: |
+        go mod init cfdata || true
+        go get github.com/gorilla/websocket
+        go mod tidy
+
+    - name: Build Android APK
+      run: |
+        export PATH=$PATH:$(go env GOPATH)/bin
+        # 将你的 Go 包编译打包为 APK 格式
+        # 注意：因为你的包名为 cfdata，这里直接将其编译为独立应用
+        gomobile build -target=android -o cfdata.apk .
+
+    - name: Upload Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: cfdata-apk
+        path: cfdata.apk
+
