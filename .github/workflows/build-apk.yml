@@ -1,89 +1,210 @@
-name: Build Android APK
+name: Build Cloudflare IP Data APK
 
 on:
   push:
-    branches: [ main ]
+    branches: [ main, master ]
   workflow_dispatch:
 
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+    - name: Checkout Code
+      uses: actions/checkout@v4
 
-      - name: Set up JDK 17
-        uses: actions/setup-java@v4
-        with:
-          java-version: '17'
-          distribution: 'temurin'
+    - name: Set up Go
+      uses: actions/setup-go@v5
+      with:
+        go-version: '1.21'
 
-      - name: Set up Go 1.22
-        uses: actions/setup-go@v5
-        with:
-          go-version: '1.22'
+    - name: Set up JDK
+      uses: actions/setup-java@v4
+      with:
+        distribution: 'zulu'
+        java-version: '17'
 
-      - name: Setup Android NDK
-        uses: android-actions/setup-android@v3
-        with:
-          ndk-version: 25.2.9519653
+    - name: Setup Android SDK
+      uses: android-actions/setup-android@v3
 
-      - name: Set NDK path
-        run: |
-          NDK=$ANDROID_HOME/ndk/25.2.9519653
-          echo "ANDROID_NDK_HOME=$NDK" >> $GITHUB_ENV
-          echo "NDK=$NDK" >> $GITHUB_ENV
+    - name: Install GoMobile
+      run: |
+        go install%20golang.org/x/mobile/cmd/gomobile@latest
+        gomobile init
 
-      - name: Install gomobile
-        run: |
-          go install golang.org/x/mobile/cmd/gomobile@latest
-          go install golang.org/x/mobile/cmd/gobind@latest
-          echo "PATH=$PATH:$(go env GOPATH)/bin" >> $GITHUB_ENV
-          gomobile init
-
-      - name: Prepare build files
-        run: |
-          # 清理旧文件
-          rm -f go.mod go.sum main.go entry.go || true
-
-          # 把 cfdata.go 改成 package main
-          sed -i '1s/^package cfdata/package main/' cfdata.go
-
-          # 生成 gomobile 入口
-          cat > entry.go << 'EOF'
-package main
-
-import (
-  "time"
-  "golang.org/x/mobile/app"
-)
-
-func main() {
-  go StartServer(8080, "speed.cloudflare.com/__down?bytes=100000000")
-
-  app.Main(func(a app.App) {
-    go func() {
-      time.Sleep(600 * time.Millisecond)
-      a.OpenURL("http://127.0.0.1:8080")
-    }()
-    for range a.Events() {}
-  })
-}
-EOF
-
-      - name: Go mod init & tidy
-        run: |
+    - name: Initialize Go Module
+      run: |
+        if [ ! -f go.mod ]; then
           go mod init cfdata
-          go get github.com/gorilla/websocket
-          go get golang.org/x/mobile/app
-          go mod tidy
+        fi
+        go mod tidy
 
-      - name: Build APK
-        run: |
-          gomobile build -target=android -androidapi=21 -o cfdata.apk .
+    - name: Build AAR with GoMobile
+      run: |
+        # 编译生成 Android aar 库
+        gomobile bind -target=android -androidapi 21 -o cfdata.aar .
 
-      - name: Upload APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: cfdata-apk
-          path: cfdata.apk
+    - name: Create Android Project Structure
+      run: |
+        mkdir -p android/app/libs
+        mkdir -p android/app/src/main/java/com/cfdata/app
+        mkdir -p android/app/src/main/res/layout
+        mkdir -p android/app/src/main/res/values
+        cp cfdata.aar android/app/libs/
+
+    - name: Generate Android Build Files
+      run: |
+        # 1. 根目录 build.gradle
+        cat << 'EOF' > android/build.gradle
+        buildscript {
+            repositories { google(); mavenCentral() }
+            dependencies { classpath 'com.android.tools.build:gradle:8.1.4' }
+        }
+        allprojects { repositories { google(); mavenCentral(); flatDir { dirs 'libs' } } }
+        EOF
+
+        # 2. settings.gradle
+        echo "include ':app'" > android/settings.gradle
+
+        # 3. app/build.gradle
+        cat << 'EOF' > android/app/build.gradle
+        plugins { id 'com.android.application' }
+        android {
+            namespace 'com.cfdata.app'
+            compileSdk 34
+            defaultConfig {
+                applicationId "com.cfdata.app"
+                minSdk 21
+                targetSdk 34
+                versionCode 1
+                versionName "1.0"
+            }
+            buildTypes {
+                release {
+                    minifyEnabled false
+                    proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+                }
+            }
+        }
+        dependencies {
+            implementation fileTree(dir: 'libs', include: ['*.jar', '*.aar'])
+            implementation 'androidx.appcompat:appcompat:1.6.1'
+            implementation 'com.google.android.material:material:1.11.0'
+            implementation 'com.gorilla:websocket:1.5.1' // 补全映射依赖
+        }
+        EOF
+
+        # 4. AndroidManifest.xml
+        cat << 'EOF' > android/app/src/main/AndroidManifest.xml
+        <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+            <uses-permission android:name="android.permission.INTERNET" />
+            <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+            <application
+                android:allowBackup="true"
+                android:label="CF 优选工具"
+                android:theme="@style/Theme.AppCompat.Light.NoActionBar"
+                android:usesCleartextTraffic="true">
+                <activity android:name=".MainActivity" android:exported="true">
+                    <intent-filter>
+                        <action android:name="android.intent.action.MAIN" />
+                        <category android:name="android.intent.category.LAUNCHER" />
+                    </intent-filter>
+                </activity>
+            </application>
+        </manifest>
+        EOF
+
+        # 5. layout/activity_main.xml
+        cat << 'EOF' > android/app/src/main/res/layout/activity_main.xml
+        <?xml version="1.0" encoding="utf-8"?>
+        <RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent">
+            <WebView
+                android:id="@+id/webview"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent" />
+        </RelativeLayout>
+        EOF
+
+        # 6. MainActivity.java (核心桥接)
+        cat << 'EOF' > android/app/src/main/java/com/cfdata/app/MainActivity.java
+        package com.cfdata.app;
+
+        import android.os.Bundle;
+        import android.webkit.WebSettings;
+        import android.webkit.WebView;
+        import android.webkit.WebViewClient;
+        import androidx.appcompat.app.AppCompatActivity;
+        import cfdata.Cfdata; // 导入 Go 编译出来的包
+
+        public class MainActivity extends AppCompatActivity {
+            private WebView webView;
+            private final int port = 19188; // 选用内部非常规端口
+
+            @Override
+            protected void onCreate(Bundle savedInstanceState) {
+                super.create(savedInstanceState);
+                setContentView(R.layout.activity_main);
+
+                // 在后台线程启动 Go 核心的本地 HTTP & WebSocket 服务器
+                new Thread(new Runnable() {
+                    @Override
+                    public void run() {
+                        Cfdata.startAndroidServer(port, "speed.cloudflare.com/__down?bytes=100000000");
+                    }
+                }).start();
+
+                webView = findViewById(R.id.webview);
+                WebSettings webSettings = webView.getSettings();
+                webSettings.setJavaScriptEnabled(true);
+                webSettings.setDomStorageEnabled(true);
+                webSettings.setDatabaseEnabled(true);
+                
+                // 允许本地跨域信任（WebSocket 连接需要）
+                webSettings.setAllowUniversalAccessFromFileURLs(true);
+
+                webView.setWebViewClient(new WebViewClient() {
+                    @Override
+                    public void onPageFinished(WebView view, String url) {
+                        super.onPageFinished(view, url);
+                    }
+                });
+
+                // 延迟一小会儿等待 Go 协程就绪，然后加载本地页面
+                webView.postDelayed(new Runnable() {
+                    @Override
+                    public void run() {
+                        webView.loadUrl("http://localhost:" + port + "/");
+                    }
+                }, 800);
+            }
+
+            @Override
+            protected void onDestroy() {
+                super.onDestroy();
+                // 退出时释放端口，避免内耗
+                Cfdata.stopAndroidServer();
+            }
+
+            @Override
+            public void onBackPressed() {
+                if (webView.canGoBack()) {
+                    webView.goBack();
+                } else {
+                    super.onBackPressed();
+                }
+            }
+        }
+        EOF
+
+    - name: Build Android APK
+      run: |
+        cd android
+        chmod +x gradlew
+        ./gradlew assembleRelease
+
+    - name: Upload APK
+      uses: actions/upload-artifact@v4
+      with:
+        name: Cloudflare-IP-Data-APK
+        path: android/app/build/outputs/apk/release/app-release-unsigned.apk
