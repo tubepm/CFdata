@@ -1,3 +1,49 @@
+
+name: Build Android APK
+
+on:
+  push:
+    branches: [ "main", "master" ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout Code
+      uses: actions/checkout@v4
+
+    - name: Reorganize Project Structure
+      run: |
+        mkdir -p main/src/main
+        mv main/AndroidManifest.xml main/src/main/ 2>/dev/null || true
+        mv main/java main/src/main/ 2>/dev/null || true
+        mv main/res main/src/main/ 2>/dev/null || true
+    - name: Set up Go
+      uses: actions/setup-go@v5
+      with:
+        go-version: '1.25.0'
+
+    - name: Set up JDK 17
+      uses: actions/setup-java@v4
+      with:
+        java-version: '17'
+        distribution: 'temurin'
+
+    - name: Install Android SDK & NDK
+      run: |
+        echo "y" | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --install "ndk;26.1.10909125" "build-tools;34.0.0" "platforms;android-34"
+        echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/26.1.10909125" >> $GITHUB_ENV
+    - name: Install and Init Go Mobile
+      run: |
+        go install golang.org/x/mobile/cmd/gomobile@latest
+        gomobile init
+        mkdir -p main/libs
+        gomobile bind -target=android/arm64 -androidapi 21 -o main/libs/cfdata.aar .
+    - name: Verify AAR
+      run: ls -la main/libs/
+
     - name: Verify AAR Contents
       run: |
         cd main/libs
@@ -7,6 +53,64 @@
         echo "=== Classes in AAR ==="
         unzip -p cfdata.aar classes.jar > /tmp/classes.jar
         jar tf /tmp/classes.jar | grep "\.class" | sort
+
+    - name: Fix AndroidManifest.xml
+      run: |
+        # AGP 8 要求 namespace 在 build.gradle 中设置，移除 manifest 中的 package 属性
+        sed -i 's/ package="com.cfdata"//' main/src/main/AndroidManifest.xml
+    - name: Generate Gradle Files
+      shell: bash
+      run: |
+        printf '%s\n' \
+          'android.useAndroidX=true' \
+          'android.enableJetifier=true' \
+          'org.gradle.jvmargs=-Xmx2048m -Dfile.encoding=UTF-8' \
+          'org.gradle.parallel=true' \
+          > gradle.properties
+        printf '%s\n' \
+          'pluginManagement {' \
+          '    repositories {' \
+          '        google()' \
+          '        mavenCentral()' \
+          '        gradlePluginPortal()' \
+          '    }' \
+          '}' \
+          "include ':main'" \
+          > settings.gradle
+        printf '%s\n' \
+          'plugins {' \
+          "    id 'com.android.application' version '8.2.2' apply false" \
+          "    id 'org.jetbrains.kotlin.android' version '1.9.22' apply false" \
+          '}' \
+          'allprojects {' \
+          '    repositories {' \
+          '        google()' \
+          '        mavenCentral()' \
+          '        flatDir { dirs "$rootDir/main/libs" }' \
+          '    }' \
+          '}' \
+          > build.gradle
+    - name: Generate main/build.gradle
+      shell: bash
+      run: |
+        printf '%s\n' \
+          'plugins {' \
+          "    id 'com.android.application'" \
+          "    id 'org.jetbrains.kotlin.android'" \
+          '}' \
+          'android {' \
+          "    namespace 'com.cfdata'" \
+          '    compileSdk 34' \
+          '    defaultConfig {' \
+          "        applicationId 'com.cfdata'" \
+          '        minSdk 21' \
+          '        targetSdk 34' \
+          '        versionCode 1' \
+          "        versionName '1.0'" \
+          '    }' \
+          '    buildTypes {' \
+          '        release { minifyEnabled false }' \
+          '    }' \
           '    compileOptions {' \
           '        sourceCompatibility JavaVersion.VERSION_17' \
           '        targetCompatibility JavaVersion.VERSION_17' \
@@ -24,14 +128,12 @@
           "    implementation 'com.google.android.material:material:1.11.0'" \
           '}' \
           > main/build.gradle
-
     - name: Generate Gradle Wrapper
       run: gradle wrapper --gradle-version 8.2 --distribution-type bin
 
     - name: Build APK with Gradle
       run: |
         ./gradlew :main:assembleDebug --stacktrace -x lint -x test --warning-mode none --no-daemon
-
     - name: Upload APK
       uses: actions/upload-artifact@v4
       with:
