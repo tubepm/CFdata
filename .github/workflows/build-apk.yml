@@ -1,6 +1,5 @@
 name: Build Android APK
 
-# 触发条件：当推送到 main 或 master 分支，或者手动触发时
 on:
   push:
     branches: [ "main", "master" ]
@@ -15,24 +14,25 @@ jobs:
     - name: Checkout Code
       uses: actions/checkout@v4
 
-    # 2. 设置 Go 语言环境（根据你的 go.mod 要求设置 1.25.0）
+    # 2. 设置 Go 语言环境（修正为官方正确的 actions/setup-go）
     - name: Set up Go
-      uses: actions/board-n-testers/setup-go@v5
+      uses: actions/setup-go@v5
       with:
         go-version: '1.25.0'
 
-    # 3. 设置 Java 环境（Android 编译依赖 Java）
+    # 3. 设置 Java 环境（Android 编译底层依赖 Java）
     - name: Set up JDK 17
       uses: actions/setup-java@v4
       with:
         java-version: '17'
         distribution: 'temurin'
 
-    # 4. 设置 Android NDK（gomobile 交叉编译必不可少）
+    # 4. 显式安装和配置 Android NDK
+    # gomobile 交叉编译必须要 NDK，我们用这个 action 自动下载并配置好环境变量
     - name: Setup Android NDK
-      uses: android-actions/setup-android@v3
-      # 提示：GitHub 的 ubuntu-latest 镜像通常默认自带 NDK，
-      # 如果提示找不到，可以通过此 Step 显式指定版本。
+      uses: nndg/setup-ndk@v2
+      with:
+        ndk-version: r26b # 这是一个稳定且与新版 Go 兼容性很好的 NDK 版本
 
     # 5. 安装 gomobile 工具
     - name: Install Go Mobile
@@ -40,20 +40,19 @@ jobs:
         go install golang.org/x/mobile/cmd/gomobile@latest
         echo "$(go env GOPATH)/bin" >> $GITHUB_PATH
 
-    # 6. 初始化 gomobile (关联 NDK 路径)
+    # 6. 初始化 gomobile
     - name: Initialize Go Mobile
       run: |
-        # 使用 GitHub 环境变量中自带的 Android NDK 路径
-        gomobile init -ndk $ANDROID_NDK_HOME
+        # ANDROID_NDK_HOME 变量会由上一步的 setup-ndk 自动注入
+        gomobile init
 
     # 7. 编译生成 APK
     - name: Build APK
       run: |
-        # 注意：这里的 ./main 应该指向你存放 main 函数（package main）的文件夹路径
-        # 如果你的 main 函数就在根目录，请把 ./main 改成 .
+        # 再次提醒：如果你的 main.go 就在根目录，请把下面的 ./main 改成 .
         gomobile build -target=android -o cfdata.apk ./main
 
-    # 8. 将编译好的 APK 上传到 GitHub，供你下载
+    # 8. 将编译好的 APK 上传到 GitHub Artifacts
     - name: Upload APK Artifact
       uses: actions/upload-artifact@v4
       with:
