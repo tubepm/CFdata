@@ -35,11 +35,9 @@ jobs:
           mkdir -p main/libs
           gomobile bind -target=android/arm64 -androidapi 21 -o main/libs/cfdata.aar .
 
-      - name: Prepare Gradle Configuration
+      - name: Initialize Project and Gradle Wrapper
         run: |
-          # 强制生成指定的 Gradle Wrapper 版本 (8.4)
-          gradle wrapper --gradle-version 8.4
-          
+          # 1. 先生成配置文件
           cat << 'EOF' > settings.gradle
           pluginManagement { repositories { google(); mavenCentral(); gradlePluginPortal() } }
           dependencyResolutionManagement {
@@ -73,10 +71,12 @@ jobs:
           }
           EOF
 
-      - name: Build APK with Gradle
-        run: |
-          # 使用生成的 gradlew 执行构建，确保版本一致性
+          # 2. 配置文件存在后，再生成 Wrapper (此时目录就是一个合法的 Gradle 项目了)
+          gradle wrapper --gradle-version 8.4
           chmod +x gradlew
+
+      - name: Build APK
+        run: |
           ./gradlew clean :main:assembleDebug --no-daemon --stacktrace
 
       - name: Upload APK
