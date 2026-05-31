@@ -1,4 +1,4 @@
-package cfdata
+package main
 
 import (
 	"bufio"
@@ -747,4 +747,12 @@ func getRandomIPv6s(ipList []string) []string {
 		randomIPs = append(randomIPs, strings.Join(sections, ":"))
 	}
 	return randomIPs
+}
+// 新增 main 函数作为安卓端启动入口
+func main() {
+    // 默认在手机本地 8080 端口启动服务
+    err := StartServer(8080, "speed.cloudflare.com/__down?bytes=100000000")
+    if err != nil {
+        fmt.Println("服务启动失败:", err)
+    }
 }
