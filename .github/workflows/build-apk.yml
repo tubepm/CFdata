@@ -14,35 +14,49 @@ jobs:
 
     steps:
     - name: Checkout code
-      uses: actions/checkout@v4
+      uses: actions/checkout@v6  # 升级到 v6 支持 node24
 
     - name: Setup Go
       uses: actions/setup-go@v5
       with:
-        go-version: 1.22
+        go-version: '1.22'
+
+    - name: Setup Android SDK
+      uses: android-actions/setup-android@v3
+      # 或手动设置 Android SDK 环境
 
     - name: Setup Android NDK
       run: |
-        NDK_PATH=$(ls -d $ANDROID_HOME/ndk/* | head -n1)
+        # 确保 NDK 存在
+        ls -la $ANDROID_HOME/ndk/ || true
+        NDK_PATH=$(ls -d $ANDROID_HOME/ndk/* | sort -V | tail -n1)
         echo "ANDROID_NDK_HOME=$NDK_PATH" >> $GITHUB_ENV
+        echo "NDK found at: $NDK_PATH"
 
     - name: Install gomobile
       run: |
         go install golang.org/x/mobile/cmd/gomobile@latest
         go install golang.org/x/mobile/cmd/gobind@latest
         echo "$(go env GOPATH)/bin" >> $GITHUB_PATH
+
+    - name: Init gomobile
+      run: |
+        export PATH=$PATH:$(go env GOPATH)/bin
         gomobile init
+      env:
+        ANDROID_HOME: ${{ env.ANDROID_HOME }}
+        ANDROID_NDK_HOME: ${{ env.ANDROID_NDK_HOME }}
 
     - name: Prepare source code
       run: |
-        # 确保 cfdata.go 存在且为 package cfdata
-        if [ ! -f cfdata.go ]; then
-          echo 'package cfdata' > cfdata.go
-          echo 'func Start() { println("ok") }' >> cfdata.go
+        # 修复 package 结构
+        mkdir -p cfdata
+        if [ ! -f cfdata/cfdata.go ]; then
+          echo 'package cfdata' > cfdata/cfdata.go
+          echo 'func Start() { println("ok") }' >> cfdata/cfdata.go
         fi
-        sed -i '1s/^package .*/package cfdata/' cfdata.go
-
-        # 生成符合 gomobile 要求的 main.go
+        
+        # 修正 main.go 的导入路径
         cat > main.go << 'MAIN_EOF'
         package main
 
@@ -60,12 +74,10 @@ jobs:
         }
         MAIN_EOF
 
-        # 创建占位 index.html
         if [ ! -f index.html ]; then
           echo '<html><body>CFdata</body></html>' > index.html
         fi
 
-        # 初始化 go module
         rm -f go.mod go.sum
         go mod init cfdata_app
         go get github.com/gorilla/websocket
@@ -74,7 +86,11 @@ jobs:
 
     - name: Build APK
       run: |
+        export PATH=$PATH:$(go env GOPATH)/bin
         gomobile build -target=android -androidapi=21 -o cfdata.apk .
+      env:
+        ANDROID_HOME: ${{ env.ANDROID_HOME }}
+        ANDROID_NDK_HOME: ${{ env.ANDROID_NDK_HOME }}
 
     - name: Upload APK
       uses: actions/upload-artifact@v4
