@@ -21,20 +21,29 @@ jobs:
       with:
         go-version: '1.22'
 
-    - name: Install Gomobile and Android SDK Tools
+    - name: Set up Android NDK Env
+      run: |
+        # 核心修复：自动寻找 GitHub 虚拟机自带的 NDK 路径并注入环境变量
+        NDK_PATH=$(ls -d $ANDROID_HOME/ndk/* | head -n 1)
+        echo "ANDROID_NDK_HOME=$NDK_PATH" >> $GITHUB_ENV
+        echo "NDK 路径已自动绑定为: $NDK_PATH"
+
+    - name: Install Gomobile and Tools
       run: |
         go install golang.org/x/mobile/cmd/gomobile@latest
         go install golang.org/x/mobile/cmd/gobind@latest
         echo "PATH=$PATH:$(go env GOPATH)/bin" >> $GITHUB_ENV
         export PATH=$PATH:$(go env GOPATH)/bin
+        # 传入环境变量初始化 gomobile
+        export ANDROID_NDK_HOME=${{ env.ANDROID_NDK_HOME }}
         gomobile init
 
     - name: Setup Go Module and Fix Case Issue
       run: |
-        # 强制将 cfdata.go 里的首字母大写 Package 替换为标准小写 package，防止手误
+        # 强制将 cfdata.go 里的大写 Package 替换为标准小写 package，防手误
         sed -i 's/^Package main/package main/g' cfdata.go
         
-        # 清理并规范化模块依赖关系
+        # 规范化清理并更新依赖关系
         rm -f go.mod go.sum || true
         go mod init cfdata
         go get github.com/gorilla/websocket
@@ -43,6 +52,7 @@ jobs:
     - name: Build Android APK
       run: |
         export PATH=$PATH:$(go env GOPATH)/bin
+        export ANDROID_NDK_HOME=${{ env.ANDROID_NDK_HOME }}
         # 编译当前 main 包为独立的安卓应用成品
         gomobile build -target=android -o cfdata.apk .
 
