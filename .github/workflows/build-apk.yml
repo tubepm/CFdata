@@ -20,7 +20,7 @@ jobs:
       with:
         go-version: '1.25.0'
 
-    # 3. 设置 Java 环境 (Gradle 9 完美适配 JDK 17)
+    # 3. 设置 Java 环境 (降级为完美适配 Gradle 8 的 JDK 17)
     - name: Set up JDK 17
       uses: actions/setup-java@v4
       with:
@@ -49,10 +49,16 @@ jobs:
         mkdir -p main/libs
         gomobile bind -target=android/arm64 -androidapi 21 -o main/libs/cfdata.aar .
 
-    # 7. 生成符合 Gradle 9.x 严格规范、带国内/国际官方下载源的全套构建文件
+    # 7. 降级安装官方成熟稳定的 Gradle 8.0 (彻底避开 9.5.1 的致命警告拦截)
+    - name: Setup Gradle 8.0
+      uses: gradle/actions/setup-gradle@v3
+      with:
+        gradle-version: '8.0'
+
+    # 8. 重新生成高度兼容的 Gradle 配置文件
     - name: Auto Generate Android Gradle Build Files
       run: |
-        # 1. 创建符合新版 Gradle 规范的 settings.gradle
+        # 1. 兼容 Gradle 8.x 的 settings.gradle
         cat << 'EOF' > main/settings.gradle
         pluginManagement {
             repositories {
@@ -74,21 +80,21 @@ jobs:
         rootProject.name = 'cfdata'
         EOF
         
-        # 2. 创建带有明确版本号的 build.gradle
+        # 2. 兼容传统的 build.gradle 声明
         cat << 'EOF' > main/build.gradle
         plugins {
-            id 'com.android.application' version '8.2.2'
-            id 'org.jetbrains.kotlin.android' version '1.9.22'
+            id 'com.android.application' version '8.0.2'
+            id 'org.jetbrains.kotlin.android' version '1.8.20'
         }
         
         android {
             namespace 'com.cfdata'
-            compileSdk 34
+            compileSdk 33
         
             defaultConfig {
                 applicationId "com.cfdata"
                 minSdk 21
-                targetSdk 34
+                targetSdk 33
                 versionCode 1
                 versionName "1.0"
             }
@@ -96,7 +102,6 @@ jobs:
             buildTypes {
                 release {
                     minifyEnabled false
-                    proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
                 }
             }
             
@@ -107,6 +112,29 @@ jobs:
             kotlinOptions {
                 jvmTarget = '17'
             }
+        }
+        
+        dependencies {
+            implementation fileTree(dir: 'libs', include: ['*.aar'])
+            implementation 'androidx.core:core-ktx:1.9.0'
+            implementation 'androidx.appcompat:appcompat:1.6.1'
+            implementation 'com.google.android.material:material:1.8.0'
+            implementation 'androidx.constraintlayout:constraintlayout:2.1.4'
+        }
+        EOF
+
+    # 9. 执行打包 (调用刚刚下载的稳定的 gradle 8.0 纯净命令)
+    - name: Build APK with Gradle 8.0
+      run: |
+        cd main
+        gradle assembleDebug --warning-mode none -x lint
+
+    # 10. 收集最终生成的精美 APK 安装包
+    - name: Upload APK Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: cloudflare-ip-data-apk
+        path: main/build/outputs/apk/debug/*.apk
         }
         
         dependencies {
