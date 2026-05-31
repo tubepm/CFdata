@@ -36,32 +36,37 @@ jobs:
         mkdir -p main/libs
         gomobile bind -target=android/arm64 -androidapi 21 -o main/libs/cfdata.aar .
 
+    - name: Verify AAR
+      run: ls -la main/libs/
+
     - name: Auto Generate Project Files
       shell: bash
       run: |
-        # 创建 settings.gradle (flatDir 路径指向 main/libs)
+        cat << 'EOF' > gradle.properties
+        android.useAndroidX=true
+        android.enableJetifier=true
+        org.gradle.jvmargs=-Xmx2048m -Dfile.encoding=UTF-8
+        org.gradle.parallel=true
+        EOF
+
         cat << 'EOF' > settings.gradle
-        pluginManagement { repositories { google(); mavenCentral(); gradlePluginPortal() } }
-        dependencyResolutionManagement {
-            repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
-            repositories {
-                google()
-                mavenCentral()
-                flatDir { dirs 'main/libs' }
-            }
-        }
         include ':main'
         EOF
         
-        # 创建主 build.gradle (项目级)
         cat << 'EOF' > build.gradle
         plugins {
             id 'com.android.application' version '8.2.2' apply false
             id 'org.jetbrains.kotlin.android' version '1.9.22' apply false
         }
+        allprojects {
+            repositories {
+                google()
+                mavenCentral()
+                flatDir { dirs "$rootDir/main/libs" }
+            }
+        }
         EOF
         
-        # 创建 main/build.gradle (模块级)
         mkdir -p main
         cat << 'EOF' > main/build.gradle
         plugins {
@@ -98,7 +103,6 @@ jobs:
         }
         EOF
 
-        # 生成 Gradle Wrapper (关键！避免使用系统 gradle)
         gradle wrapper --gradle-version 8.2
 
     - name: Build APK with Gradle
