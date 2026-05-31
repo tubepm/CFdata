@@ -37,14 +37,17 @@ jobs:
         export ANDROID_NDK_HOME=${{ env.ANDROID_NDK_HOME }}
         gomobile init
 
-    - name: Setup Go Module and Fix Code
+    - name: Setup Go Module and Create Main Entry
       run: |
-        # 1. 强制将首字母大写 Package 替换为标准小写 package，防止任何手误隐患
-        sed -i 's/^Package main/package main/g' cfdata.go
+        # 1. 创建一个标准的 main.go，把你的源码复制进去
+        cp cfdata.go main.go
         
-        # 2. 规范化初始化依赖关系，并将模块直接命名为 main
+        # 2. 强制将第一行无论是 Package 还是 package cfdata 都统一改成小写的 package main
+        sed -i '1s/.*/package main/' main.go
+        
+        # 3. 规范化初始化依赖关系，直接以本地目录为核心
         rm -f go.mod go.sum || true
-        go mod init main
+        go mod init cfdata_app
         go get github.com/gorilla/websocket
         go mod tidy
 
@@ -53,8 +56,8 @@ jobs:
         export PATH=$PATH:$(go env GOPATH)/bin
         export ANDROID_NDK_HOME=${{ env.ANDROID_NDK_HOME }}
         
-        # 终极修复：使用 main 模块整体打包，既能找到 main 函数，又能把 index.html 完美嵌入！
-        gomobile build -target=android -o cfdata.apk main
+        # 终极修复：直接在当前目录下构建（"." 代表当前目录），它会自动识别新创建的包含 package main 的 main.go 以及它要嵌入的 index.html
+        gomobile build -target=android -o cfdata.apk .
         
     - name: Upload Finished APK Artifact
       uses: actions/upload-artifact@v4
