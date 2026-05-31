@@ -46,6 +46,11 @@ jobs:
     - name: Verify AAR
       run: ls -la main/libs/
 
+    - name: Fix AndroidManifest.xml
+      run: |
+        # AGP 8 要求 namespace 在 build.gradle 中设置，移除 manifest 中的 package 属性
+        sed -i 's/ package="com.cfdata"//' main/src/main/AndroidManifest.xml
+
     - name: Generate Gradle Files
       shell: bash
       run: |
@@ -116,6 +121,7 @@ jobs:
           "    implementation(name: 'cfdata', ext: 'aar')" \
           "    implementation 'androidx.core:core-ktx:1.12.0'" \
           "    implementation 'androidx.appcompat:appcompat:1.6.1'" \
+          "    implementation 'com.google.android.material:material:1.11.0'" \
           '}' \
           > main/build.gradle
 
