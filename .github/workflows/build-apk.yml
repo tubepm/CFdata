@@ -23,6 +23,11 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
 
+      - name: Install Android NDK
+        run: |
+          echo "y" | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --install "ndk;26.1.10909125"
+          echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/26.1.10909125" >> $GITHUB_ENV
+
       - name: Build Go Library
         run: |
           go install golang.org/x/mobile/cmd/gomobile@latest
@@ -30,19 +35,20 @@ jobs:
           mkdir -p main/libs
           gomobile bind -target=android/arm64 -androidapi 21 -o main/libs/cfdata.aar .
 
-      - name: Configure Project
+      - name: Prepare Gradle Configuration
         run: |
-          # 强制生成 Gradle 8.5 环境，规避 9.x 版本的兼容性问题
-          gradle wrapper --gradle-version 8.5
-          chmod +x gradlew
+          # 强制生成指定的 Gradle Wrapper 版本 (8.4)
+          gradle wrapper --gradle-version 8.4
           
-          # 创建标准的 settings.gradle
           cat << 'EOF' > settings.gradle
-          rootProject.name = 'cfdata-project'
+          pluginManagement { repositories { google(); mavenCentral(); gradlePluginPortal() } }
+          dependencyResolutionManagement {
+              repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+              repositories { google(); mavenCentral(); flatDir { dirs 'libs' } }
+          }
           include ':main'
           EOF
           
-          # 创建根目录构建配置
           cat << 'EOF' > build.gradle
           plugins {
               id 'com.android.application' version '8.2.2' apply false
@@ -50,37 +56,28 @@ jobs:
           }
           EOF
           
-          # 创建子模块构建配置
           mkdir -p main
           cat << 'EOF' > main/build.gradle
-          plugins {
-              id 'com.android.application'
-              id 'org.jetbrains.kotlin.android'
-          }
+          plugins { id 'com.android.application'; id 'org.jetbrains.kotlin.android' }
           android {
-              namespace 'com.cfdata'
-              compileSdk 34
-              defaultConfig {
-                  applicationId 'com.cfdata'
-                  minSdk 21
-                  targetSdk 34
-              }
-              compileOptions {
-                  sourceCompatibility JavaVersion.VERSION_17
-                  targetCompatibility JavaVersion.VERSION_17
-              }
+              namespace 'com.cfdata'; compileSdk 34
+              defaultConfig { applicationId 'com.cfdata'; minSdk 21; targetSdk 34 }
+              buildTypes { release { minifyEnabled false } }
+              compileOptions { sourceCompatibility JavaVersion.VERSION_17; targetCompatibility JavaVersion.VERSION_17 }
+              lint { abortOnError false }
           }
           dependencies {
               implementation fileTree(dir: 'libs', include: ['*.aar'])
               implementation 'androidx.core:core-ktx:1.12.0'
+              implementation 'androidx.appcompat:appcompat:1.6.1'
           }
           EOF
 
-      - name: Build APK
+      - name: Build APK with Gradle
         run: |
-          # 必须清理环境，且使用 ./gradlew 确保使用刚才生成的 8.5 版本
-          rm -rf .gradle build main/.gradle main/build
-          ./gradlew :main:assembleDebug --no-daemon --stacktrace
+          # 使用生成的 gradlew 执行构建，确保版本一致性
+          chmod +x gradlew
+          ./gradlew clean :main:assembleDebug --no-daemon --stacktrace
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
