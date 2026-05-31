@@ -39,7 +39,7 @@ jobs:
 
     - name: Prepare Go Module and Entry Point
       run: |
-        # 1. 强制纠正原本 cfdata.go 里的包名，无论大小写或自定义包，一律统一清洗为标准的 package main
+        # 1. 强制纠正原本 cfdata.go 里的包名，统一清洗为标准的 package main
         if [ -f cfdata.go ]; then
           sed -i 's/^Package main/package main/g' cfdata.go
           sed -i 's/^package cfdata/package main/g' cfdata.go
@@ -57,35 +57,4 @@ jobs:
 
 func main() {
     // 自动追加的安卓端服务启动入口
-    err := StartServer(8080, "speed.cloudflare.com/__down?bytes=100000000")
-    if err != nil {
-        println("服务启动失败:", err.Error())
-    }
-}
-EOF
-        fi
-
-        # 4. 确保 index.html 存在，防止 //go:embed index.html 报错
-        if [ ! -f index.html ]; then
-          echo '<!DOCTYPE html><html><body><h1>CFdata Android 运行中</h1></body></html>' > index.html
-        fi
-
-        # 5. 规范化配置 Go Module 并拉取最新的 WebSocket 依赖包
-        rm -f go.mod go.sum || true
-        go mod init cfdata_app
-        go get github.com/gorilla/websocket
-        go mod tidy
-
-    - name: Build Android APK
-      run: |
-        export PATH=$PATH:$(go env GOPATH)/bin
-        export ANDROID_NDK_HOME=${{ env.ANDROID_NDK_HOME }}
-        
-        # 关键参数修复：用点号 "." 编译当前整包，并指定最低支持到 API 21 的安卓系统
-        gomobile build -target=android -androidapi=21 -o cfdata.apk .
-
-    - name: Upload APK Artifact
-      uses: actions/upload-artifact@v4
-      with:
-        name: cfdata-apk
-        path: cfdata.apk
+    err := StartServer(8080, "speed
