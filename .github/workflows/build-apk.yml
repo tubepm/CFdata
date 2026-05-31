@@ -38,32 +38,46 @@ jobs:
 
     - name: Clean And Restore Code
       run: |
-        # 1. 彻底清除之前生成的残留干扰文件
+        # 1. 彻底清除残留
         rm -f go.mod go.sum main.go index.html || true
         
-        # 2. 强行把你的 cfdata.go 恢复到最纯净、健康的原始状态
+        # 2. 强行把你的 cfdata.go 恢复到原始健康状态
         git checkout -- cfdata.go || true
 
-        # 3. 确保你的 cfdata.go 第一行是 package main
+        # 3. 确保第一行包名合规
         sed -i '1s/^Package .*/package main/' cfdata.go
         sed -i '1s/^package .*/package main/' cfdata.go
 
-        # 4. 创建纯净的 index.html，防止 embed 报错
-        echo '<!DOCTYPE html><html><body>CFdata Android</body></html>' > index.html
+        # 4. 创建静态 index.html
+        echo '<!DOCTYPE html><html><body>CFdata Android Service Running</body></html>' > index.html
 
     - name: Auto Create Main Entry
       run: |
-        # 5. 核心修复：直接用极简命令在当前目录生成一个引导文件 main.go
-        # 它提供纯正的 main 入口，彻底解决 "function main is undeclared" 报错
+        # 5. 核心修复：在 main.go 中开启后台协程，拉起你的 StartServer 服务
         echo 'package main' > main.go
-        echo 'import "golang.org/x/mobile/app"' >> main.go
+        echo 'import (' >> main.go
+        echo '    "golang.org/x/mobile/app"' >> main.go
+        echo '    "log"' >> main.go
+        echo ')' >> main.go
         echo 'func main() {' >> main.go
-        echo '    app.Main(func(a app.App) {})' >> main.go
+        echo '    # 在后台异步启动你的测速核心服务，防止阻塞安卓主线程' >> main.go
+        echo '    go func() {' >> main.go
+        echo '        log.Println("正在启动 Cloudflare 核心服务...")' >> main.go
+        echo '        # 如果你的启动函数不叫 StartServer，请把下面这行改成你真实的函数名' >> main.go
+        echo '        err := StartServer(8080, "speed.cloudflare.com/__down?bytes=100000000")' >> main.go
+        echo '        if err != nil {' >> main.go
+        echo '            log.Println("服务运行异常:", err)' >> main.go
+        echo '        }' >> main.go
+        echo '    }()' >> main.go
+        echo '    ' >> main.go
+        echo '    # 维持安卓应用的生命周期壳子' >> main.go
+        echo '    app.Main(func(a app.App) {' >> main.go
+        echo '        switch a.Lifecycle() {}' >> main.go
+        echo '    })' >> main.go
         echo '}' >> main.go
 
     - name: Initialize Modules
       run: |
-        # 6. 初始化 go 模块，此时当前目录下有：干净的 cfdata.go + 刚生成的 main.go 入口 + index.html
         go mod init cfdata_app
         go get github.com/gorilla/websocket
         go mod tidy
@@ -73,7 +87,7 @@ jobs:
         export PATH=$PATH:$(go env GOPATH)/bin
         export ANDROID_NDK_HOME=${{ env.ANDROID_NDK_HOME }}
         
-        # 7. 整包编译，完美融合成最终的 APK 成品
+        # 6. 打包输出
         gomobile build -target=android -androidapi=21 -o cfdata.apk .
 
     - name: Upload APK Artifact
