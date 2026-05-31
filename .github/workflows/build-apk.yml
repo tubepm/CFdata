@@ -25,7 +25,7 @@ jobs:
       run: |
         NDK_PATH=$(ls -d $ANDROID_HOME/ndk/* | head -n 1)
         echo "ANDROID_NDK_HOME=$NDK_PATH" >> $GITHUB_ENV
-        echo "NDK 路径: $NDK_PATH"
+        echo "NDK path: $NDK_PATH"
 
     - name: Install Gomobile and Tools
       run: |
@@ -50,29 +50,11 @@ jobs:
         echo 'func main() {' >> main.go
         echo '    app.Main(func(a app.App) {' >> main.go
         echo '        log.Println("CFdata Android App Started")' >> main.go
-        echo '        // TODO: 调用您的业务逻辑，例如 Run()' >> main.go
+        echo '        // TODO: call your business logic, e.g., Run()' >> main.go
         echo '    })' >> main.go
         echo '}' >> main.go
         cat cfdata.go >> main.go
         if [ ! -f index.html ]; then echo '<!DOCTYPE html><html><body>CFdata</body></html>' > index.html; fi
-        rm -f go.mod go.sum || true
-        go mod init cfdata_app
-        go get github.com/gorilla/websocket
-        go get golang.org/x/mobile@latest
-        go mod tidy
-
-    - name: Build Android APK
-      run: |
-        export PATH=$PATH:$(go env GOPATH)/bin
-        export ANDROID_NDK_HOME=${{ env.ANDROID_NDK_HOME }}
-        gomobile build -target=android -androidapi=21 -o cfdata.apk .
-
-    - name: Upload APK Artifact
-      uses: actions/upload-artifact@v4
-      with:
-        name: cfdata-apk
-        path: cfdata.apk
-        # 6. 初始化 go.mod 并添加必要依赖
         rm -f go.mod go.sum || true
         go mod init cfdata_app
         go get github.com/gorilla/websocket
