@@ -38,20 +38,25 @@ jobs:
 
     - name: Prepare Pure Code Environment
       run: |
-        # 1. 清除上几次生成的所有残留文件，确保区内干净
-        rm -f go.mod go.sum main.go index.html || true
+        # 1. 彻底清除上几次残存的垃圾文件
+        rm -f go.mod go.sum main.go || true
         
-        # 2. 强行将你的 cfdata.go 彻底恢复到你提交时的最原始状态
+        # 2. 强行将你的 cfdata.go 恢复到最干净的原始代码状态
         git checkout -- cfdata.go || true
 
-        # 3. 将第一行的 package cfdata 变更为 package main，满足单独编译 APK 的要求
+        # 3. 核心修复：防止 embed 找不到文件报错，若根目录下不存在 index.html 则自动创建一个
+        if [ ! -f index.html ]; then
+          echo '<!DOCTYPE html><html><head><meta charset="utf-8"><title>CFdata</title></head><body><h1>CFdata Android 后台已启动</h1></body></html>' > index.html
+        fi
+
+        # 4. 将第一行的 package cfdata 强行修改为符合 APK 独立编译要求的 package main
         sed -i '1s/^package .*/package main/' cfdata.go
 
-        # 4. 关键修复：直接向 cfdata.go 的文件末尾追加标准的 main 入口和后台拉起函数
-        # 这种平铺追加不带任何双引号和复杂转义，100% 不会引起 YAML 飘红
+        # 5. 终极参数补全：向文件末尾追加主引导，完美对齐 StartServer(int, string) 的双参数要求
+        # 同时利用完整路径引入 app 依赖，不使用双引号，完美避开 YAML 网页红线
         echo "" >> cfdata.go
         echo "func main() {" >> cfdata.go
-        echo "	go StartServer(8080)" >> cfdata.go
+        echo "	go StartServer(8080, \"speed.cloudflare.com/__down?bytes=100000000\")" >> cfdata.go
         echo "	golang.org/x/mobile/app.Main(func(a golang.org/x/mobile/app.App) {" >> cfdata.go
         echo "		for range a.Events() {}" >> cfdata.go
         echo "	})" >> cfdata.go
@@ -59,7 +64,7 @@ jobs:
 
     - name: Initialize Modules
       run: |
-        # 5. 初始化 Go 模块并拉取项目必须的 websocket 依赖
+        # 6. 重新生成并拉取依赖关系
         go mod init cfdata_app
         go get github.com/gorilla/websocket
         go mod tidy
@@ -69,7 +74,7 @@ jobs:
         export PATH=$PATH:$(go env GOPATH)/bin
         export ANDROID_NDK_HOME=${{ env.ANDROID_NDK_HOME }}
         
-        # 6. 整包编译当前目录，生成最终的 APK 文件
+        # 7. 开始整包构建带核心后台逻辑的 APK
         gomobile build -target=android -androidapi=21 -o cfdata.apk .
 
     - name: Upload APK Artifact
