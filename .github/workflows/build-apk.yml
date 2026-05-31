@@ -2,7 +2,7 @@ name: Build Android APK
 
 on:
   push:
-    branches: [ "main" ]
+    branches: [ main ]
   workflow_dispatch:
 
 env:
@@ -13,48 +13,70 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    - name: Checkout Code
+    - name: Checkout code
       uses: actions/checkout@v4
 
-    - name: Set up Go
+    - name: Setup Go
       uses: actions/setup-go@v5
       with:
-        go-version: '1.22'
+        go-version: 1.22
 
-    - name: Set up Android NDK Env
+    - name: Setup Android NDK
       run: |
-        NDK_PATH=$(ls -d $ANDROID_HOME/ndk/* | head -n 1)
+        NDK_PATH=$(ls -d $ANDROID_HOME/ndk/* | head -n1)
         echo "ANDROID_NDK_HOME=$NDK_PATH" >> $GITHUB_ENV
-        echo "NDK 路径: $NDK_PATH"
 
-    - name: Install Gomobile and Tools
+    - name: Install gomobile
       run: |
         go install golang.org/x/mobile/cmd/gomobile@latest
         go install golang.org/x/mobile/cmd/gobind@latest
-        echo "PATH=$PATH:$(go env GOPATH)/bin" >> $GITHUB_ENV
-        export PATH=$PATH:$(go env GOPATH)/bin
-        export ANDROID_NDK_HOME=${{ env.ANDROID_NDK_HOME }}
+        echo "$(go env GOPATH)/bin" >> $GITHUB_PATH
         gomobile init
 
-    - name: Prepare Go Module and Entry Point
+    - name: Prepare source code
       run: |
-        if [ ! -f cfdata.go ]; then echo 'package cfdata' > cfdata.go; echo '' >> cfdata.go; echo 'func Start() { println("CFdata started") }' >> cfdata.go; fi
+        # 确保 cfdata.go 存在且为 package cfdata
+        if [ ! -f cfdata.go ]; then
+          echo 'package cfdata' > cfdata.go
+          echo 'func Start() { println("ok") }' >> cfdata.go
+        fi
         sed -i '1s/^package .*/package cfdata/' cfdata.go
-        printf '%s\n' 'package main' '' 'import (' '    "log"' '    "cfdata_app/cfdata"' '    "golang.org/x/mobile/app"' ')' '' 'func main() {' '    app.Main(func(a app.App) {' '        log.Println("CFdata Android App 启动")' '        cfdata.Start()' '    })' '}' > main.go
-        if [ ! -f index.html ]; then echo '<!DOCTYPE html><html><body>CFdata</body></html>' > index.html; fi
-        rm -f go.mod go.sum || true
+
+        # 生成符合 gomobile 要求的 main.go
+        cat > main.go << 'MAIN_EOF'
+        package main
+
+        import (
+            "log"
+            "cfdata_app/cfdata"
+            "golang.org/x/mobile/app"
+        )
+
+        func main() {
+            app.Main(func(a app.App) {
+                log.Println("App started")
+                cfdata.Start()
+            })
+        }
+        MAIN_EOF
+
+        # 创建占位 index.html
+        if [ ! -f index.html ]; then
+          echo '<html><body>CFdata</body></html>' > index.html
+        fi
+
+        # 初始化 go module
+        rm -f go.mod go.sum
         go mod init cfdata_app
         go get github.com/gorilla/websocket
         go get golang.org/x/mobile@latest
         go mod tidy
 
-    - name: Build Android APK
+    - name: Build APK
       run: |
-        export PATH=$PATH:$(go env GOPATH)/bin
-        export ANDROID_NDK_HOME=${{ env.ANDROID_NDK_HOME }}
         gomobile build -target=android -androidapi=21 -o cfdata.apk .
 
-    - name: Upload APK Artifact
+    - name: Upload APK
       uses: actions/upload-artifact@v4
       with:
         name: cfdata-apk
