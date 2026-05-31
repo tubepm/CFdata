@@ -43,37 +43,30 @@ jobs:
       run: |
         gomobile init
 
-    # 6. 【高能黑科技】动态注入标准的 gomobile app 窗口生命周期
-    # 直接让 cfdata.go 拥有合法的 package main 和底层安卓生命周期接管能力
+    # 6. 【安全修改】动态修复源码包名，并安全追加主入口函数
     - name: Inject Android App Lifecycle into Go
       run: |
-        # 1. 强行改成 package main
+        # 1. 强行把 package cfdata 替换成 package main
         sed -i 's/package cfdata/package main/g' cfdata.go
         
-        # 2. 在文件末尾追加合法的 main 函数与安卓原生 app 窗口事件监听
-        cat << 'EOF' >> cfdata.go
-
-import "golang.org/x/mobile/app"
-
-func main() {
-	// 在后台异步拉起你的高性能测速服务
-	go StartServer(8080, "127.0.0.1")
-
-	// 阻塞并接管安卓应用生命周期，让系统承认它是一个合法的、有生存权的 App
-	app.Main(func(a app.App) {
-		for range a.Events() {
-			// 手机端保持后台不灭即可
-		}
-	})
-}
-EOF
-        echo "=== 检查动态注入后的源码尾部 ==="
-        tail -n 25 cfdata.go
+        # 2. 使用最安全的单行 echo 方式追加代码，彻底规避多行文本导致的 YAML 语法拦截
+        echo "" >> cfdata.go
+        echo 'import "golang.org/x/mobile/app"' >> cfdata.go
+        echo "" >> cfdata.go
+        echo "func main() {" >> cfdata.go
+        echo "	go StartServer(8080, \"127.0.0.1\")" >> cfdata.go
+        echo "	app.Main(func(a app.App) {" >> cfdata.go
+        echo "		for range a.Events() {" >> cfdata.go
+        echo "		}" >> cfdata.go
+        echo "	})" >> cfdata.go
+        echo "}" >> cfdata.go
+        
+        echo "=== 检查修改后的 Go 文件末尾 15 行 ==="
+        tail -n 15 cfdata.go
 
     # 7. 越过所有 Gradle 垃圾配置，直接使用 Go 交叉编译引擎生成 APK！
     - name: Pure Go Build APK
       run: |
-        # -androidapi 21 规避新版 NDK 的过旧版本拦截错误
         gomobile build -target=android -androidapi 21 -o cfdata.apk .
 
     # 8. 上传最终生成的 APK 安装包
@@ -82,82 +75,3 @@ EOF
       with:
         name: cloudflare-ip-data-apk
         path: cfdata.apk
-                targetCompatibility JavaVersion.VERSION_17
-            }
-            kotlinOptions {
-                jvmTarget = '17'
-            }
-        }
-        
-        dependencies {
-            implementation fileTree(dir: 'libs', include: ['*.aar'])
-            implementation 'androidx.core:core-ktx:1.9.0'
-            implementation 'androidx.appcompat:appcompat:1.6.1'
-            implementation 'com.google.android.material:material:1.8.0'
-            implementation 'androidx.constraintlayout:constraintlayout:2.1.4'
-        }
-        EOF
-
-    # 9. 执行打包 (调用刚刚下载的稳定的 gradle 8.0 纯净命令)
-    - name: Build APK with Gradle 8.0
-      run: |
-        cd main
-        gradle assembleDebug --warning-mode none -x lint
-
-    # 10. 收集最终生成的精美 APK 安装包
-    - name: Upload APK Artifact
-      uses: actions/upload-artifact@v4
-      with:
-        name: cloudflare-ip-data-apk
-        path: main/build/outputs/apk/debug/*.apk
-                targetCompatibility JavaVersion.VERSION_17
-            }
-            kotlinOptions {
-                jvmTarget = '17'
-            }
-        }
-        
-        dependencies {
-            implementation fileTree(dir: 'libs', include: ['*.aar'])
-            implementation 'androidx.core:core-ktx:1.9.0'
-            implementation 'androidx.appcompat:appcompat:1.6.1'
-            implementation 'com.google.android.material:material:1.8.0'
-            implementation 'androidx.constraintlayout:constraintlayout:2.1.4'
-        }
-        EOF
-
-    # 9. 执行打包 (调用刚刚下载的稳定的 gradle 8.0 纯净命令)
-    - name: Build APK with Gradle 8.0
-      run: |
-        cd main
-        gradle assembleDebug --warning-mode none -x lint
-
-    # 10. 收集最终生成的精美 APK 安装包
-    - name: Upload APK Artifact
-      uses: actions/upload-artifact@v4
-      with:
-        name: cloudflare-ip-data-apk
-        path: main/build/outputs/apk/debug/*.apk
-        }
-        
-        dependencies {
-            implementation fileTree(dir: 'libs', include: ['*.aar'])
-            implementation 'androidx.core:core-ktx:1.12.0'
-            implementation 'androidx.appcompat:appcompat:1.6.1'
-            implementation 'com.google.android.material:material:1.11.0'
-            implementation 'androidx.constraintlayout:constraintlayout:2.1.4'
-        }
-        EOF
-
-    # 8. 【核心改变】使用强力容错参数进行构建，屏蔽过时警告造成的打断
-    - name: Build APK with System Gradle
-      run: |
-        cd main
-        gradle assembleDebug -x lint -x test --warning-mode none
-
-    # 9. 收集最终生成的精美 APK 安装包
-    - name: Upload APK Artifact
-      uses: actions/upload-artifact@v4
-      with:
-        name: cloudflare-ip-data-apk
-        path: main/build/outputs/apk/debug/*.apk
