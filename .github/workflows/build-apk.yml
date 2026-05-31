@@ -43,25 +43,22 @@ jobs:
       run: |
         gomobile init
 
-    # 6. 【核心改变】将你的 cfdata.go 编译绑定为安卓原生的 .aar 依赖库
-    # 它会自动生成 cfdata.aar 和 cfdata-sources.jar
+    # 6. 【核心改变】加入 -androidapi 21 解决 NDK 版本冲突
     - name: Bind Go to Android Library
       run: |
-        gomobile bind -target=android/arm64 -o main/cfdata.aar .
+        gomobile bind -target=android/arm64 -androidapi 21 -o main/cfdata.aar .
 
     # 7. 使用 Android 命令行打包工具（Gradle）将外壳和库融合，编译生成 APK
     - name: Build APK with Gradle
       run: |
         cd main
-        # 如果项目根目录或main里没有 gradlew 脚本，我们直接用系统内置的 gradle 编译
         if [ -f "./gradlew" ]; then
           chmod +x gradlew
           ./gradlew assembleDebug
         else
           gradle assembleDebug || echo "尝试使用原生标准构建..."
-          # 兜底容错方案：如果外壳未配置完整的 gradle，直接通过 gomobile 的高级原生包装模式进行合并
           cd ..
-          gomobile build -target=android -o cfdata.apk .
+          gomobile build -target=android -androidapi 21 -o cfdata.apk .
         fi
 
     # 8. 收集和寻找编译生成的 APK 并上传
