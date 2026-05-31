@@ -49,7 +49,7 @@ jobs:
         mkdir -p main/libs
         gomobile bind -target=android/arm64 -androidapi 21 -o main/libs/cfdata.aar .
 
-    # 7. 【终极防错】使用标准的项目级别隔离生成，用最安全的 8.2.2 环境直接构建
+    # 7. 【终极防卡】极致精简生成，彻底删除所有带冒号的 dependencies
     - name: Auto Generate Top-Level and App Gradle Files
       run: |
         # 1. 创建顶层 settings.gradle
@@ -71,15 +71,14 @@ jobs:
         include ':main'
         SETTING_EOF
         
-        # 2. 创建主 build.gradle
+        # 2. 创建主 build.gradle (指定稳定的 8.2.2 框架插件)
         cat << 'ROOT_EOF' > build.gradle
         plugins {
             id 'com.android.application' version '8.2.2' apply false
-            id 'org.jetbrains.kotlin.android' version '1.9.22' apply false
         }
         ROOT_EOF
         
-        # 3. 创建 main 目录下的 build.gradle
+        # 3. 创建 main 目录下的纯净版 build.gradle (不带任何三方包依赖声明)
         cat << 'APP_EOF' > main/build.gradle
         plugins {
             id 'com.android.application'
@@ -110,10 +109,6 @@ jobs:
         }
         dependencies {
             implementation files('libs/cfdata.aar')
-            implementation 'androidx.core:core-ktx:1.12.0'
-            implementation 'androidx.appcompat:appcompat:1.6.1'
-            implementation 'com.google.android.material:material:1.11.0'
-            implementation 'androidx.constraintlayout:constraintlayout:2.1.4'
         }
         APP_EOF
 
@@ -128,110 +123,6 @@ jobs:
         ./gradlew :main:assembleDebug -x lint -x test --warning-mode none
 
     # 10. 收集并上传最终生成的 APK 安装包
-    - name: Upload APK Artifact
-      uses: actions/upload-artifact@v4
-      with:
-        name: cloudflare-ip-data-apk
-        path: main/build/outputs/apk/debug/*.apk
-        }
-        dependencies {
-            implementation files('libs/cfdata.aar')
-            implementation 'androidx.core:core-ktx:1.12.0'
-            implementation 'androidx.appcompat:appcompat:1.6.1'
-            implementation 'com.google.android.material:material:1.11.0'
-            implementation 'androidx.constraintlayout:constraintlayout:2.1.4'
-        }
-        APP_EOF
-
-    # 8. 一键生成官方独立的 Gradle 8.4 包装器 (Wrapper) 
-    - name: Setup Independent Gradle Wrapper
-      run: |
-        gradle wrapper --gradle-version 8.4 --distribution-type bin
-
-    # 9. 使用全新的本地包装器执行无打断编译
-    - name: Build APK with Gradle Wrapper
-      run: |
-        ./gradlew :main:assembleDebug -x lint -x test --warning-mode none
-
-    # 10. 收集并上传最终生成的 APK 安装包
-    - name: Upload APK Artifact
-      uses: actions/upload-artifact@v4
-      with:
-        name: cloudflare-ip-data-apk
-        path: main/build/outputs/apk/debug/*.apk
-        
-        # 4. 精准引入，彻底移除带有特殊符号的全局降级闭包
-        echo "dependencies {" >> main/build.gradle
-        echo "    implementation files('libs/cfdata.aar')" >> main/build.gradle
-        echo "    implementation 'androidx.core:core-ktx:1.12.0'" >> main/build.gradle
-        echo "    implementation 'androidx.appcompat:appcompat:1.6.1'" >> main/build.gradle
-        echo "    implementation 'com.google.android.material:material:1.11.0'" >> main/build.gradle
-        echo "    implementation 'androidx.constraintlayout:constraintlayout:2.1.4'" >> main/build.gradle
-        echo "}" >> main/build.gradle
-
-    # 8. 一键生成官方独立的 Gradle 8.4 包装器 (Wrapper) 
-    - name: Setup Independent Gradle Wrapper
-      run: |
-        gradle wrapper --gradle-version 8.4 --distribution-type bin
-
-    # 9. 使用全新的本地包装器执行无打断编译
-    - name: Build APK with Gradle Wrapper
-      run: |
-        ./gradlew :main:assembleDebug -x lint -x test --warning-mode none
-
-    # 10. 收集并上传最终生成的 APK 安装包
-    - name: Upload APK Artifact
-      uses: actions/upload-artifact@v4
-      with:
-        name: cloudflare-ip-data-apk
-        path: main/build/outputs/apk/debug/*.apk
-        
-        # 4. 彻底修复冲突！改用高版本完美支持的 files() 精准引入方式
-        echo "dependencies {" >> main/build.gradle
-        echo "    implementation files('libs/cfdata.aar')" >> main/build.gradle
-        echo "    implementation 'androidx.core:core-ktx:1.12.0'" >> main/build.gradle
-        echo "    implementation 'androidx.appcompat:appcompat:1.6.1'" >> main/build.gradle
-        echo "    implementation 'com.google.android.material:material:1.11.0'" >> main/build.gradle
-        echo "    implementation 'androidx.constraintlayout:constraintlayout:2.1.4'" >> main/build.gradle
-        echo "}" >> main/build.gradle
-
-    # 8. 一键生成官方独立的 Gradle 8.4 包装器 (Wrapper) 
-    - name: Setup Independent Gradle Wrapper
-      run: |
-        gradle wrapper --gradle-version 8.4 --distribution-type bin
-
-    # 9. 使用全新的本地包装器执行无打断编译
-    - name: Build APK with Gradle Wrapper
-      run: |
-        ./gradlew :main:assembleDebug -x lint -x test --warning-mode none
-
-    # 10. 收集并上传最终生成的 APK 安装包
-    - name: Upload APK Artifact
-      uses: actions/upload-artifact@v4
-      with:
-        name: cloudflare-ip-data-apk
-        path: main/build/outputs/apk/debug/*.apk
-        echo "}" >> main/build.gradle
-        echo "dependencies {" >> main/build.gradle
-        echo "    implementation fileTree(dir: 'libs', include: ['*.aar'])" >> main/build.gradle
-        echo "    implementation 'androidx.core:core-ktx:1.10.1'" >> main/build.gradle
-        echo "    implementation 'androidx.appcompat:appcompat:1.6.1'" >> main/build.gradle
-        echo "    implementation 'com.google.android.material:material:1.9.0'" >> main/build.gradle
-        echo "    implementation 'androidx.constraintlayout:constraintlayout:2.1.4'" >> main/build.gradle
-        echo "}" >> main/build.gradle
-
-    # 8. 【核弹级绝杀】在当前目录一键生成官方独立的 Gradle 8.4 包装器 (Wrapper)
-    # 彻底架空并抛弃系统全局那傲娇、脆弱的 9.5.1
-    - name: Setup Independent Gradle Wrapper
-      run: |
-        gradle wrapper --gradle-version 8.4 --distribution-type bin
-
-    # 9. 使用全新的、完全独立的、带绝对容错标识的本地包装器命令一键强行打包
-    - name: Build APK with Gradle Wrapper
-      run: |
-        ./gradlew :main:assembleDebug --stacktrace --info -x lint -x test --warning-mode none
-
-    # 10. 收集最终生成的精美 APK 安装包
     - name: Upload APK Artifact
       uses: actions/upload-artifact@v4
       with:
