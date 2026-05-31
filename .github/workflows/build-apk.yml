@@ -49,113 +49,78 @@ jobs:
     - name: Generate Gradle Files
       shell: bash
       run: |
-        cat << 'EOF' > gradle.properties
-        android.useAndroidX=true
-        android.enableJetifier=true
-        org.gradle.jvmargs=-Xmx2048m -Dfile.encoding=UTF-8
-        org.gradle.parallel=true
-        EOF
+        printf '%s\n' \
+          'android.useAndroidX=true' \
+          'android.enableJetifier=true' \
+          'org.gradle.jvmargs=-Xmx2048m -Dfile.encoding=UTF-8' \
+          'org.gradle.parallel=true' \
+          > gradle.properties
 
-        cat << 'EOF' > settings.gradle
-        pluginManagement {
-            repositories {
-                google()
-                mavenCentral()
-                gradlePluginPortal()
-            }
-        }
-        include ':main'
-        EOF
-        
-        cat << 'EOF' > build.gradle
-        plugins {
-            id 'com.android.application' version '8.2.2' apply false
-            id 'org.jetbrains.kotlin.android' version '1.9.22' apply false
-        }
-        allprojects {
-            repositories {
-                google()
-                mavenCentral()
-                flatDir { dirs "$rootDir/main/libs" }
-            }
-        }
-        EOF
+        printf '%s\n' \
+          'pluginManagement {' \
+          '    repositories {' \
+          '        google()' \
+          '        mavenCentral()' \
+          '        gradlePluginPortal()' \
+          '    }' \
+          '}' \
+          "include ':main'" \
+          > settings.gradle
+
+        printf '%s\n' \
+          'plugins {' \
+          "    id 'com.android.application' version '8.2.2' apply false" \
+          "    id 'org.jetbrains.kotlin.android' version '1.9.22' apply false" \
+          '}' \
+          'allprojects {' \
+          '    repositories {' \
+          '        google()' \
+          '        mavenCentral()' \
+          '        flatDir { dirs "$rootDir/main/libs" }' \
+          '    }' \
+          '}' \
+          > build.gradle
 
     - name: Generate main/build.gradle
       shell: bash
       run: |
-        cat << 'EOF' > main/build.gradle
-        plugins {
-            id 'com.android.application'
-            id 'org.jetbrains.kotlin.android'
-        }
-        android {
-            namespace 'com.cfdata'
-            compileSdk 34
-            defaultConfig {
-                applicationId 'com.cfdata'
-                minSdk 21
-                targetSdk 34
-                versionCode 1
-                versionName '1.0'
-            }
-            buildTypes {
-                release { minifyEnabled false }
-            }
-            compileOptions {
-                sourceCompatibility JavaVersion.VERSION_17
-                targetCompatibility JavaVersion.VERSION_17
-            }
-            kotlinOptions { jvmTarget = '17' }
-            lint {
-                abortOnError false
-                checkReleaseBuilds false
-            }
-        }
-        dependencies {
-            implementation(name: 'cfdata', ext: 'aar')
-            implementation 'androidx.core:core-ktx:1.12.0'
-            implementation 'androidx.appcompat:appcompat:1.6.1'
-        }
-        EOF
+        printf '%s\n' \
+          'plugins {' \
+          "    id 'com.android.application'" \
+          "    id 'org.jetbrains.kotlin.android'" \
+          '}' \
+          'android {' \
+          "    namespace 'com.cfdata'" \
+          '    compileSdk 34' \
+          '    defaultConfig {' \
+          "        applicationId 'com.cfdata'" \
+          '        minSdk 21' \
+          '        targetSdk 34' \
+          '        versionCode 1' \
+          "        versionName '1.0'" \
+          '    }' \
+          '    buildTypes {' \
+          '        release { minifyEnabled false }' \
+          '    }' \
+          '    compileOptions {' \
+          '        sourceCompatibility JavaVersion.VERSION_17' \
+          '        targetCompatibility JavaVersion.VERSION_17' \
+          '    }' \
+          "    kotlinOptions { jvmTarget = '17' }" \
+          '    lint {' \
+          '        abortOnError false' \
+          '        checkReleaseBuilds false' \
+          '    }' \
+          '}' \
+          'dependencies {' \
+          "    implementation(name: 'cfdata', ext: 'aar')" \
+          "    implementation 'androidx.core:core-ktx:1.12.0'" \
+          "    implementation 'androidx.appcompat:appcompat:1.6.1'" \
+          '}' \
+          > main/build.gradle
 
     - name: Generate Gradle Wrapper
       run: gradle wrapper --gradle-version 8.2 --distribution-type bin
-
-    - name: Build APK with Gradle
-      run: |
-        ./gradlew :main:assembleDebug --stacktrace -x lint -x test --warning-mode none --no-daemon
-
-    - name: Upload APK
-      uses: actions/upload-artifact@v4
-      with:
-        name: cloudflare-ip-data-apk
-        path: main/build/outputs/apk/debug/*.apk
-                checkReleaseBuilds false
-            }
-        }
-        dependencies {
-            implementation(name: 'cfdata', ext: 'aar')
-            implementation 'androidx.core:core-ktx:1.12.0'
-            implementation 'androidx.appcompat:appcompat:1.6.1'
-        }
-        EOF
-
-        gradle wrapper --gradle-version 8.2 --distribution-type bin
-
-    - name: Build APK with Gradle
-      run: |
-        ./gradlew :main:assembleDebug --stacktrace -x lint -x test --warning-mode none --no-daemon
-
-    - name: Upload APK
-      uses: actions/upload-artifact@v4
-      with:
-        name: cloudflare-ip-data-apk
-        path: main/build/outputs/apk/debug/*.apk
-        }
-        EOF
-
-        gradle wrapper --gradle-version 8.2 --distribution-type bin
 
     - name: Build APK with Gradle
       run: |
