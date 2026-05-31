@@ -38,7 +38,7 @@ jobs:
 
     - name: Prepare Go Module and Entry Point
       run: |
-        # 如果仓库根目录没有 cfdata.go，则创建一个最小示例
+        # 1. 如果仓库根目录没有 cfdata.go，则创建一个最小示例
         if [ ! -f cfdata.go ]; then
           cat > cfdata.go << 'EOF'
 package main
@@ -56,11 +56,11 @@ func main() {
 EOF
         fi
 
-        # 强制将 cfdata.go 改为 package main，并重命名为 main.go（避免重复）
+        # 2. 强制将 cfdata.go 改为 package main，并重命名为 main.go（避免重复）
         sed -i '1s/^package .*/package main/' cfdata.go
         mv cfdata.go main.go
 
-        # 确保存在 main() 函数
+        # 3. 确保存在 main() 函数
         if ! grep -q "^func main()" main.go; then
           cat >> main.go << 'EOF'
 
@@ -71,12 +71,12 @@ func main() {
 EOF
         fi
 
-        # 确保 index.html 存在（如果代码中使用了 //go:embed）
+        # 4. 确保 index.html 存在（如果代码中使用了 //go:embed）
         if [ ! -f index.html ]; then
           echo '<!DOCTYPE html><html><body>CFdata</body></html>' > index.html
         fi
 
-        # 初始化 go module 并下载依赖
+        # 5. 初始化 go module 并下载依赖
         rm -f go.mod go.sum || true
         go mod init cfdata_app
         go get github.com/gorilla/websocket
