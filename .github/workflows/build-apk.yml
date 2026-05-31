@@ -37,13 +37,16 @@ jobs:
         export ANDROID_NDK_HOME=${{ env.ANDROID_NDK_HOME }}
         gomobile init
 
-    - name: Setup Go Module and Create Main Entry
+    - name: Setup Go Module and Sanitize Code
       run: |
-        # 1. 修复你原本 cfdata.go 里的所有大小写包名，强制让它变成标准的 package main
+        # 1. 核心修复：防止之前残留在虚拟机或缓存里的多余 main.go 干扰，直接强制删掉它
+        rm -f main.go || true
+        
+        # 2. 确保你的核心文件第一行是标准的 package main，不管大写小写都给纠正过来
         sed -i 's/Package main/package main/g' cfdata.go
         sed -i 's/package cfdata/package main/g' cfdata.go
         
-        # 2. 规范化初始化依赖关系
+        # 3. 规范化初始化依赖关系
         rm -f go.mod go.sum || true
         go mod init cfdata_app
         go get github.com/gorilla/websocket
@@ -54,8 +57,7 @@ jobs:
         export PATH=$PATH:$(go env GOPATH)/bin
         export ANDROID_NDK_HOME=${{ env.ANDROID_NDK_HOME }}
         
-        # 3. 直接对当前整个目录进行整体打包（点号 "." 代表当前目录）
-        # 此时目录下只有修复后的 cfdata.go、index.html 和依赖，gomobile 会完美融合成一个应用
+        # 4. 目录此时无比干净，只有唯一的 cfdata.go 和 index.html，直接整包一键输出 APK！
         gomobile build -target=android -o cfdata.apk .
         
     - name: Upload Finished APK Artifact
