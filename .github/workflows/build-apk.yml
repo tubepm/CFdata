@@ -50,6 +50,13 @@ jobs:
         EOF
 
         cat << 'EOF' > settings.gradle
+        pluginManagement {
+            repositories {
+                google()
+                mavenCentral()
+                gradlePluginPortal()
+            }
+        }
         include ':main'
         EOF
         
@@ -103,10 +110,17 @@ jobs:
         }
         EOF
 
-        gradle wrapper --gradle-version 8.2
+        gradle wrapper --gradle-version 8.2 --distribution-type bin
 
     - name: Build APK with Gradle
       run: |
+        ./gradlew :main:assembleDebug --stacktrace -x lint -x test --warning-mode none --no-daemon
+
+    - name: Upload APK
+      uses: actions/upload-artifact@v4
+      with:
+        name: cloudflare-ip-data-apk
+        path: main/build/outputs/apk/debug/*.apk
         ./gradlew :main:assembleDebug --stacktrace -x lint -x test --warning-mode none --no-daemon
 
     - name: Upload APK
