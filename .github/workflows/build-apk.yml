@@ -8,8 +8,6 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
-    env:
-      GRADLE_USER_HOME: ${{ github.workspace }}/.gradle
 
     steps:
     - name: Checkout Code
@@ -38,16 +36,11 @@ jobs:
         mkdir -p main/libs
         gomobile bind -target=android/arm64 -androidapi 21 -o main/libs/cfdata.aar .
 
-    # 生成 Gradle 包装器，确保环境一致性
-    - name: Setup Gradle Wrapper
-      run: |
-        gradle wrapper --gradle-version 8.5
-        chmod +x gradlew
-
     - name: Auto Generate Project Files
+      shell: bash
       run: |
-        # settings.gradle
-        cat <<EOF > settings.gradle
+        # 创建 settings.gradle
+        cat << 'EOF' > settings.gradle
         pluginManagement { repositories { google(); mavenCentral(); gradlePluginPortal() } }
         dependencyResolutionManagement {
             repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
@@ -56,24 +49,43 @@ jobs:
         include ':main'
         EOF
         
-        # build.gradle (root)
-        cat <<EOF > build.gradle
+        # 创建主 build.gradle
+        cat << 'EOF' > build.gradle
         plugins {
             id 'com.android.application' version '8.2.2' apply false
             id 'org.jetbrains.kotlin.android' version '1.9.22' apply false
         }
         EOF
         
-        # main/build.gradle
-        cat <<EOF > main/build.gradle
-        plugins { id 'com.android.application'; id 'org.jetbrains.kotlin.android' }
+        # 创建 main/build.gradle (使用 cat << 'EOF' 彻底解决大括号语法冲突)
+        mkdir -p main
+        cat << 'EOF' > main/build.gradle
+        plugins {
+            id 'com.android.application'
+            id 'org.jetbrains.kotlin.android'
+        }
         android {
-            namespace 'com.cfdata'; compileSdk 34
-            defaultConfig { applicationId 'com.cfdata'; minSdk 21; targetSdk 34; versionCode 1; versionName '1.0' }
-            buildTypes { release { minifyEnabled false } }
-            compileOptions { sourceCompatibility JavaVersion.VERSION_17; targetCompatibility JavaVersion.VERSION_17 }
+            namespace 'com.cfdata'
+            compileSdk 34
+            defaultConfig {
+                applicationId 'com.cfdata'
+                minSdk 21
+                targetSdk 34
+                versionCode 1
+                versionName '1.0'
+            }
+            buildTypes {
+                release { minifyEnabled false }
+            }
+            compileOptions {
+                sourceCompatibility JavaVersion.VERSION_17
+                targetCompatibility JavaVersion.VERSION_17
+            }
             kotlinOptions { jvmTarget = '17' }
-            lint { abortOnError false; checkReleaseBuilds false }
+            lint {
+                abortOnError false
+                checkReleaseBuilds false
+            }
         }
         dependencies {
             implementation fileTree(dir: 'libs', include: ['*.aar'])
@@ -82,45 +94,13 @@ jobs:
         }
         EOF
 
-    # 使用官方 Action 运行构建，它会自动处理并发安全和缓存清理
-    - name: Build with Gradle
-      uses: gradle/gradle-build-action@v3
-      with:
-        arguments: clean :main:assembleDebug --no-daemon --stacktrace
-
-    - name: Upload APK
-      uses: actions/upload-artifact@v4
-      with:
-        name: cloudflare-ip-data-apk
-        path: main/build/outputs/apk/debug/*.apk
-        echo "    }" >> main/build.gradle
-        echo "}" >> main/build.gradle
-        
-        # 4. 精简依赖，并强制锁定版本防止依赖树传递冲突
-        echo "dependencies {" >> main/build.gradle
-        echo "    implementation fileTree(dir: 'libs', include: ['*.aar'])" >> main/build.gradle
-        echo "    implementation 'androidx.core:core-ktx:1.12.0'" >> main/build.gradle
-        echo "    implementation 'androidx.appcompat:appcompat:1.6.1'" >> main/build.gradle
-        echo "    implementation 'com.google.android.material:material:1.11.0'" >> main/build.gradle
-        echo "    implementation 'androidx.constraintlayout:constraintlayout:2.1.4'" >> main/build.gradle
-        echo "}" >> main/build.gradle
-        
-        # 【终极补丁】：强制统合可能产生冲突的所有旧版 transitive 依赖
-        echo "configurations.all {" >> main/build.gradle
-        echo "    resolutionStrategy.eachDependency { DependencyResolveDetails details ->" >> main/build.gradle
-        echo "        if (details.requested.group == 'androidx.annotation') {" >> main/build.gradle
-        echo "            details.useVersion '1.7.1'" >> main/build.gradle
-        echo "        }" >> main/build.gradle
-        echo "    }" >> main/build.gradle
-        echo "}" >> main/build.gradle
-
-    # 8. 真正的安卓工程一键编译（加入容错标志，不给机器人任何报错打断的机会）
     - name: Build APK with Gradle
       run: |
-        gradle :main:assembleDebug --stacktrace -x lint -x test --warning-mode none
+        chmod +x gradlew || true
+        # 如果未生成 gradlew，则使用 gradle 命令
+        gradle :main:assembleDebug --stacktrace -x lint -x test --warning-mode none --no-daemon
 
-    # 9. 收集最终生成的精美 APK 安装包
-    - name: Upload APK Artifact
+    - name: Upload APK
       uses: actions/upload-artifact@v4
       with:
         name: cloudflare-ip-data-apk
