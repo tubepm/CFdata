@@ -38,22 +38,32 @@ jobs:
 
     - name: Clean And Restore Code
       run: |
-        # 1. 彻底清除上几次生成的所有干扰文件，确保目录纯净
+        # 1. 彻底清除之前生成的残留干扰文件
         rm -f go.mod go.sum main.go index.html || true
         
-        # 2. 强行恢复被之前脚本追加坏了的 cfdata.go 文件，退回到你提交时的干净状态
+        # 2. 强行把你的 cfdata.go 恢复到最纯净、健康的原始状态
         git checkout -- cfdata.go || true
 
-        # 3. 仅修正第一行的包名，不改动和追加任何其他内容
+        # 3. 确保你的 cfdata.go 第一行是 package main
         sed -i '1s/^Package .*/package main/' cfdata.go
         sed -i '1s/^package .*/package main/' cfdata.go
 
-        # 4. 创建纯净的 index.html，防 embed 报错
+        # 4. 创建纯净的 index.html，防止 embed 报错
         echo '<!DOCTYPE html><html><body>CFdata Android</body></html>' > index.html
+
+    - name: Auto Create Main Entry
+      run: |
+        # 5. 核心修复：直接用极简命令在当前目录生成一个引导文件 main.go
+        # 它提供纯正的 main 入口，彻底解决 "function main is undeclared" 报错
+        echo 'package main' > main.go
+        echo 'import "golang.org/x/mobile/app"' >> main.go
+        echo 'func main() {' >> main.go
+        echo '    app.Main(func(a app.App) {})' >> main.go
+        echo '}' >> main.go
 
     - name: Initialize Modules
       run: |
-        # 以本地目录初始化模块并拉取 websocket 依赖
+        # 6. 初始化 go 模块，此时当前目录下有：干净的 cfdata.go + 刚生成的 main.go 入口 + index.html
         go mod init cfdata_app
         go get github.com/gorilla/websocket
         go mod tidy
@@ -63,7 +73,7 @@ jobs:
         export PATH=$PATH:$(go env GOPATH)/bin
         export ANDROID_NDK_HOME=${{ env.ANDROID_NDK_HOME }}
         
-        # 5. 整包编译当前目录，强制支持 API 21 绕过高版本 NDK 限制
+        # 7. 整包编译，完美融合成最终的 APK 成品
         gomobile build -target=android -androidapi=21 -o cfdata.apk .
 
     - name: Upload APK Artifact
