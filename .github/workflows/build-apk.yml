@@ -39,13 +39,11 @@ jobs:
 
     - name: Setup Go Module and Create Main Entry
       run: |
-        # 1. 创建一个标准的 main.go，把你的源码复制进去
-        cp cfdata.go main.go
+        # 1. 修复你原本 cfdata.go 里的所有大小写包名，强制让它变成标准的 package main
+        sed -i 's/Package main/package main/g' cfdata.go
+        sed -i 's/package cfdata/package main/g' cfdata.go
         
-        # 2. 强制将第一行无论是 Package 还是 package cfdata 都统一改成小写的 package main
-        sed -i '1s/.*/package main/' main.go
-        
-        # 3. 规范化初始化依赖关系，直接以本地目录为核心
+        # 2. 规范化初始化依赖关系
         rm -f go.mod go.sum || true
         go mod init cfdata_app
         go get github.com/gorilla/websocket
@@ -56,7 +54,8 @@ jobs:
         export PATH=$PATH:$(go env GOPATH)/bin
         export ANDROID_NDK_HOME=${{ env.ANDROID_NDK_HOME }}
         
-        # 终极修复：直接在当前目录下构建（"." 代表当前目录），它会自动识别新创建的包含 package main 的 main.go 以及它要嵌入的 index.html
+        # 3. 直接对当前整个目录进行整体打包（点号 "." 代表当前目录）
+        # 此时目录下只有修复后的 cfdata.go、index.html 和依赖，gomobile 会完美融合成一个应用
         gomobile build -target=android -o cfdata.apk .
         
     - name: Upload Finished APK Artifact
