@@ -38,41 +38,25 @@ jobs:
 
     - name: Prepare Pure Environment
       run: |
+        # 1. 彻底清除上几次残留的生成文件，让工作区绝对干净
         rm -f go.mod go.sum main.go index.html || true
         
-        if [ -f cfdata.go ]; then
-          sed -i '/^package /d' cfdata.go
-          sed -i '/^Package /d' cfdata.go
+        # 2. 丢弃由于之前执行过 sed 导致损坏的临时状态，重新拉取一份你仓库里完好的代码
+        git checkout -- cfdata.go || true
+
+        # 3. 强制确保你的核心 cfdata.go 首行是标准的 package main，这次不删除，只做大小写和名称替换
+        sed -i 's/^Package main/package main/g' cfdata.go
+        sed -i 's/^package cfdata/package main/g' cfdata.go
+
+        # 4. 确保 index.html 存在，防止 //go:embed index.html 报错
+        if [ ! -f index.html ]; then
+          echo '<!DOCTYPE html><html><body>CFdata Android Running</body></html>' > index.html
         fi
-
-    - name: Create Main File
-      run: |
-        cat > main.go << 'EOF'
-        package main
-        
-        import (
-        	"embed"
-        	"log"
-        	"golang.org/x/mobile/app"
-        )
-        
-        //go:embed index.html
-        var fsys embed.FS
-        
-        func main() {
-        	app.Main(func(a app.App) {
-        		log.Println("App started")
-        	})
-        }
-        EOF
-
-    - name: Create HTML File
-      run: |
-        echo '<!DOCTYPE html><html><body>CFdata Android</body></html>' > index.html
 
     - name: Initialize Modules
       run: |
-        go mod init cfdata_app
+        # 将模块初始化为 main 模块
+        go mod init main
         go get github.com/gorilla/websocket
         go mod tidy
 
@@ -80,6 +64,8 @@ jobs:
       run: |
         export PATH=$PATH:$(go env GOPATH)/bin
         export ANDROID_NDK_HOME=${{ env.ANDROID_NDK_HOME }}
+        
+        # 5. 直接使用 "." 编译当前整包，同时带上你指定的 API 21 兼容参数
         gomobile build -target=android -androidapi=21 -o cfdata.apk .
 
     - name: Upload APK Artifact
