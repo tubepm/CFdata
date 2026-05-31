@@ -11,88 +11,85 @@ env:
 jobs:
   build:
     runs-on: ubuntu-latest
-
     steps:
-    - name: Checkout Code
-      uses: actions/checkout@v4
+      - name: Checkout Code
+        uses: actions/checkout@v4
 
-    - name: Set up Go
-      uses: actions/setup-go@v5
-      with:
-        go-version: '1.22'
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: "17"
+          distribution: "temurin"
 
-    - name: Set up Android NDK Env
-      run: |
-        NDK_PATH=$(ls -d $ANDROID_HOME/ndk/* | head -n 1)
-        echo "ANDROID_NDK_HOME=$NDK_PATH" >> $GITHUB_ENV
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.22"
 
-    - name: Install Gomobile and Tools
-      run: |
-        go install golang.org/x/mobile/cmd/gomobile@latest
-        go install golang.org/x/mobile/cmd/gobind@latest
-        echo "PATH=$PATH:$(go env GOPATH)/bin" >> $GITHUB_ENV
-        export PATH=$PATH:$(go env GOPATH)/bin
-        export ANDROID_NDK_HOME=${{ env.ANDROID_NDK_HOME }}
-        gomobile init
+      - name: Install Android SDK & NDK
+        uses: android-actions/setup-android@v3
+        with:
+          ndk-version: "26.2.11394342"
 
-    - name: Prepare Architecture Environment
-      run: |
-        # 1. 彻底清除之前生成的残留干扰文件和临时模块
-        rm -f go.mod go.sum main.go gomobile_entry.go build.sh || true
-        
-        # 2. 强行将你的 cfdata.go 恢复到你代码库里最纯净的原始代码状态
-        git checkout -- cfdata.go || true
-        
-        # 3. 创建标准的安卓 Assets 资源目录，把网页和数据中心文件强制装包，防止白屏
-        mkdir -p assets
-        cp index.html assets/ || true
-        if [ -f locations.json ]; then cp locations.json assets/; fi
-        
-        # 4. 将第一行的 package cfdata 变更为 package main，满足编译独立 APK 的标准
-        sed -i '1s/^package .*/package main/' cfdata.go
-        
-        # 5. 【解耦修复】不在 cfdata.go 内部乱插代码。直接生成一个独立的伴生文件提供 gomobile 校验
-        # 这样包内既有完整的 import，又绝对不存在顺序错乱（imports must appear before other declarations）的问题！
-        cat << 'EOF' > gomobile_entry.go
+      - name: Export NDK Path
+        run: |
+          echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/26.2.11394342" >> $GITHUB_ENV
+
+      - name: Install Gomobile and Tools
+        run: |
+          go install golang.org/x/mobile/cmd/gomobile@latest
+          go install golang.org/x/mobile/cmd/gobind@latest
+          echo "PATH=$PATH:$(go env GOPATH)/bin" >> $GITHUB_ENV
+          export PATH=$PATH:$(go env GOPATH)/bin
+          gomobile init
+
+      - name: Prepare Code & Entry File
+        run: |
+          rm -f go.mod go.sum gomobile_entry.go || true
+          git checkout -- cfdata.go || true
+
+          mkdir -p assets
+          cp index.html assets/ || true
+          [ -f locations.json ] && cp locations.json assets/
+
+          sed -i '1s/^package .*/package main/' cfdata.go
+
+          cat << 'EOF' > gomobile_entry.go
 package main
 
-import _ "golang.org/x/mobile/app"
-import "golang.org/x/mobile/app"
-import "time"
+import (
+        "time"
+        "golang.org/x/mobile/app"
+        _ "golang.org/x/mobile/app"
+)
 
 func main() {
-	// 后台拉起核心测速与 WebSocket 服务器
-	go StartServer(8080, "speed.cloudflare.com/__down?bytes=100000000")
+        go StartServer(8080, "speed.cloudflare.com/__down?bytes=100000000")
 
-	// 监听生命周期，并在进入前台时调用系统的 OpenURL 强行弹出面板
-	app.Main(func(a app.App) {
-		go func() {
-			time.Sleep(600 * time.Millisecond)
-			a.OpenURL("http://127.0.0.1:8080")
-		}()
-		for range a.Events() {}
-	})
+        app.Main(func(a app.App) {
+                go func() {
+                        time.Sleep(600 * time.Millisecond)
+                        a.OpenURL("http://127.0.0.1:8080")
+                }()
+                for range a.Events() {}
+        })
 }
 EOF
 
-    - name: Initialize Modules
-      run: |
-        # 6. 重新梳理依赖链并拉取必要依赖
-        go mod init main
-        go get github.com/gorilla/websocket
-        go get golang.org/x/mobile/app
-        go mod tidy
+      - name: Go Mod Init & Tidy
+        run: |
+          go mod init main
+          go get github.com/gorilla/websocket
+          go get golang.org/x/mobile/app
+          go mod tidy
 
-    - name: Build Android APK
-      run: |
-        export PATH=$PATH:$(go env GOPATH)/bin
-        export ANDROID_NDK_HOME=${{ env.ANDROID_NDK_HOME }}
-        
-        # 7. 开始整包构建，输出带你最新功能的完整成品 APK
-        gomobile build -target=android -androidapi=21 -o cfdata.apk .
+      - name: Build Android APK
+        run: |
+          export PATH=$PATH:$(go env GOPATH)/bin
+          gomobile build -target=android -androidapi=21 -o cfdata.apk .
 
-    - name: Upload APK Artifact
-      uses: actions/upload-artifact@v4
-      with:
-        name: cfdata-apk
-        path: cfdata.apk
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: cfdata-apk
+          path: cfdata.apk
