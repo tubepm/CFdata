@@ -8,79 +8,105 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+
     steps:
-      - name: Checkout Code
-        uses: actions/checkout@v4
+    - name: Checkout Code
+      uses: actions/checkout@v4
 
-      - name: Set up Go
-        uses: actions/setup-go@v5
-        with:
-          go-version: '1.25.0'
+    - name: Set up Go
+      uses: actions/setup-go@v5
+      with:
+        go-version: '1.25.0'
 
-      - name: Set up JDK 17
-        uses: actions/setup-java@v4
-        with:
-          java-version: '17'
-          distribution: 'temurin'
+    - name: Set up JDK 17
+      uses: actions/setup-java@v4
+      with:
+        java-version: '17'
+        distribution: 'temurin'
 
-      - name: Install Android NDK
-        run: |
-          echo "y" | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --install "ndk;26.1.10909125"
-          echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/26.1.10909125" >> $GITHUB_ENV
+    - name: Install Android SDK & NDK
+      run: |
+        echo "y" | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --install "ndk;26.1.10909125" "build-tools;34.0.0" "platforms;android-34"
+        echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/26.1.10909125" >> $GITHUB_ENV
 
-      - name: Build Go Library
-        run: |
-          go install golang.org/x/mobile/cmd/gomobile@latest
-          gomobile init
-          mkdir -p main/libs
-          gomobile bind -target=android/arm64 -androidapi 21 -o main/libs/cfdata.aar .
+    - name: Install and Init Go Mobile
+      run: |
+        go install golang.org/x/mobile/cmd/gomobile@latest
+        gomobile init
+        mkdir -p main/libs
+        gomobile bind -target=android/arm64 -androidapi 21 -o main/libs/cfdata.aar .
 
-      - name: Initialize Project and Gradle Wrapper
-        run: |
-          # 1. 先生成配置文件
-          cat << 'EOF' > settings.gradle
-          pluginManagement { repositories { google(); mavenCentral(); gradlePluginPortal() } }
-          dependencyResolutionManagement {
-              repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
-              repositories { google(); mavenCentral(); flatDir { dirs 'libs' } }
-          }
-          include ':main'
-          EOF
-          
-          cat << 'EOF' > build.gradle
-          plugins {
-              id 'com.android.application' version '8.2.2' apply false
-              id 'org.jetbrains.kotlin.android' version '1.9.22' apply false
-          }
-          EOF
-          
-          mkdir -p main
-          cat << 'EOF' > main/build.gradle
-          plugins { id 'com.android.application'; id 'org.jetbrains.kotlin.android' }
-          android {
-              namespace 'com.cfdata'; compileSdk 34
-              defaultConfig { applicationId 'com.cfdata'; minSdk 21; targetSdk 34 }
-              buildTypes { release { minifyEnabled false } }
-              compileOptions { sourceCompatibility JavaVersion.VERSION_17; targetCompatibility JavaVersion.VERSION_17 }
-              lint { abortOnError false }
-          }
-          dependencies {
-              implementation fileTree(dir: 'libs', include: ['*.aar'])
-              implementation 'androidx.core:core-ktx:1.12.0'
-              implementation 'androidx.appcompat:appcompat:1.6.1'
-          }
-          EOF
+    - name: Auto Generate Project Files
+      shell: bash
+      run: |
+        # 创建 settings.gradle (flatDir 路径指向 main/libs)
+        cat << 'EOF' > settings.gradle
+        pluginManagement { repositories { google(); mavenCentral(); gradlePluginPortal() } }
+        dependencyResolutionManagement {
+            repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+            repositories {
+                google()
+                mavenCentral()
+                flatDir { dirs 'main/libs' }
+            }
+        }
+        include ':main'
+        EOF
+        
+        # 创建主 build.gradle (项目级)
+        cat << 'EOF' > build.gradle
+        plugins {
+            id 'com.android.application' version '8.2.2' apply false
+            id 'org.jetbrains.kotlin.android' version '1.9.22' apply false
+        }
+        EOF
+        
+        # 创建 main/build.gradle (模块级)
+        mkdir -p main
+        cat << 'EOF' > main/build.gradle
+        plugins {
+            id 'com.android.application'
+            id 'org.jetbrains.kotlin.android'
+        }
+        android {
+            namespace 'com.cfdata'
+            compileSdk 34
+            defaultConfig {
+                applicationId 'com.cfdata'
+                minSdk 21
+                targetSdk 34
+                versionCode 1
+                versionName '1.0'
+            }
+            buildTypes {
+                release { minifyEnabled false }
+            }
+            compileOptions {
+                sourceCompatibility JavaVersion.VERSION_17
+                targetCompatibility JavaVersion.VERSION_17
+            }
+            kotlinOptions { jvmTarget = '17' }
+            lint {
+                abortOnError false
+                checkReleaseBuilds false
+            }
+        }
+        dependencies {
+            implementation(name: 'cfdata', ext: 'aar')
+            implementation 'androidx.core:core-ktx:1.12.0'
+            implementation 'androidx.appcompat:appcompat:1.6.1'
+        }
+        EOF
 
-          # 2. 配置文件存在后，再生成 Wrapper (此时目录就是一个合法的 Gradle 项目了)
-          gradle wrapper --gradle-version 8.4
-          chmod +x gradlew
+        # 生成 Gradle Wrapper (关键！避免使用系统 gradle)
+        gradle wrapper --gradle-version 8.2
 
-      - name: Build APK
-        run: |
-          ./gradlew clean :main:assembleDebug --no-daemon --stacktrace
+    - name: Build APK with Gradle
+      run: |
+        ./gradlew :main:assembleDebug --stacktrace -x lint -x test --warning-mode none --no-daemon
 
-      - name: Upload APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: cloudflare-ip-data-apk
-          path: main/build/outputs/apk/debug/*.apk
+    - name: Upload APK
+      uses: actions/upload-artifact@v4
+      with:
+        name: cloudflare-ip-data-apk
+        path: main/build/outputs/apk/debug/*.apk
