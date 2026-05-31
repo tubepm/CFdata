@@ -35,20 +35,29 @@ jobs:
         export ANDROID_NDK_HOME=${{ env.ANDROID_NDK_HOME }}
         gomobile init
 
-    - name: Prepare Clean Code
+    - name: Prepare Architecture Environment
       run: |
-        # 1. 彻底删掉之前脚本在虚拟机里生成的干扰文件 main.go 和模块缓存
-        rm -f main.go go.mod go.sum build.sh || true
+        # 1. 彻底清除上几次残存的碎片垃圾文件
+        rm -f go.mod go.sum main.go || true
         
-        # 2. 核心拯救：强行把 cfdata.go 恢复到你 Git 仓库里最纯净、没有被追加破坏的状态
+        # 2. 强行将你的 cfdata.go 恢复到你代码库里最新、最纯净的原始代码状态
         git checkout -- cfdata.go || true
         
-        # 3. 顺应编译要求：确保文件首行包名是 package main（如果原本是 cfdata 就换成 main）
+        # 3. 将第一行的 package cfdata 变更为标准的 package main，满足编译独立 APK 的铁律
         sed -i '1s/^package .*/package main/' cfdata.go
+        
+        # 4. 关键对齐：如果你的 cfdata.go 里本身没有编写 func main() 入口，我们只在最末尾静默追加一个，
+        # 并用 Go 的反单引号作为测速链接参数，彻底避开 YAML 网页端的所有转义高亮大坑，全站零红线！
+        if ! grep -q "func main()" cfdata.go; then
+          echo "" >> cfdata.go
+          echo "func main() {" >> cfdata.go
+          echo "	StartServer(8080, \`speed.cloudflare.com/__down?bytes=100000000\`)" >> cfdata.go
+          echo "}" >> cfdata.go
+        fi
 
     - name: Initialize Modules
       run: |
-        # 4. 以最标准的 package main 模块环境拉取依赖
+        # 5. 用主模块环境重新梳理依赖链
         go mod init main
         go get github.com/gorilla/websocket
         go mod tidy
@@ -58,7 +67,7 @@ jobs:
         export PATH=$PATH:$(go env GOPATH)/bin
         export ANDROID_NDK_HOME=${{ env.ANDROID_NDK_HOME }}
         
-        # 5. 纯净编译你原本的代码包，不掺杂任何多余文件
+        # 6. 开始整包构建，输出带你最新功能的完整成品 APK
         gomobile build -target=android -androidapi=21 -o cfdata.apk .
 
     - name: Upload APK Artifact
