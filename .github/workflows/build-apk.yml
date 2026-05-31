@@ -1,56 +1,28 @@
-name: Build Android APK
-
-on:
-  push:
-    branches: [ "main", "master" ]
-  workflow_dispatch:
-
-jobs:
-  build:
-    runs-on: ubuntu-latest
-
-    steps:
-    - name: Checkout Code
-      uses: actions/checkout@v4
-
-    - name: Set up Go
-      uses: actions/setup-go@v5
-      with:
-        go-version: '1.25.0'
-
-    - name: Set up JDK 17
-      uses: actions/setup-java@v4
-      with:
-        java-version: '17'
-        distribution: 'temurin'
-
-    - name: Install Android NDK
-      run: |
-        echo "y" | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --install "ndk;26.1.10909125"
-        echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/26.1.10909125" >> $GITHUB_ENV
-
-    - name: Install Go Mobile
-      run: |
-        go install golang.org/x/mobile/cmd/gomobile@latest
-        echo "$(go env GOPATH)/bin" >> $GITHUB_PATH
-
-    - name: Initialize Go Mobile
-      run: gomobile init
-
-    - name: Bind Go to Android Library
-      run: |
-        mkdir -p main/libs
-        gomobile bind -androidapi 21 -o main/libs/cfdata.aar .
-
     - name: Setup Gradle Project
       run: |
-        # 1. 生成 settings.gradle
-        echo "include ':main'" > settings.gradle
+        # 1. 生成 settings.gradle，加入完整的仓库源，这是解决插件找不到和库解析失败的核心
+        cat << 'EOF' > settings.gradle
+        pluginManagement {
+            repositories {
+                google()
+                mavenCentral()
+                gradlePluginPortal()
+            }
+        }
+        dependencyResolutionManagement {
+            repositoriesMode.set(RepositoriesMode.PREFER_SETTINGS)
+            repositories {
+                google()
+                mavenCentral()
+            }
+        }
+        include ':main'
+        EOF
         
         # 2. 生成根 build.gradle
         echo "plugins { id 'com.android.application' version '8.2.2' apply false }" > build.gradle
         
-        # 3. 生成最纯净的 main/build.gradle，强制指定 aar 绝对路径
+        # 3. 生成 main/build.gradle
         cat << 'EOF' > main/build.gradle
         plugins {
             id 'com.android.application'
@@ -64,18 +36,6 @@ jobs:
             }
         }
         dependencies {
-            // 使用 files 函数直接指定文件，绕过所有依赖仓库校验
             implementation files('libs/cfdata.aar')
         }
         EOF
-
-    - name: Build APK
-      run: |
-        gradle wrapper --gradle-version 8.4
-        ./gradlew :main:assembleDebug --warning-mode none
-
-    - name: Upload APK
-      uses: actions/upload-artifact@v4
-      with:
-        name: cloudflare-ip-data-apk
-        path: main/build/outputs/apk/debug/*.apk
