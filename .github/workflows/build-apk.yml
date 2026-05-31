@@ -41,39 +41,39 @@ jobs:
         # 1. 确保 cfdata.go 存在（若不存在则创建最小可运行版本）
         if [ ! -f cfdata.go ]; then
           cat > cfdata.go << 'EOF'
-        package main
+package main
 
-        import (
-            "log"
-            "golang.org/x/mobile/app"
-        )
+import (
+    "log"
+    "golang.org/x/mobile/app"
+)
 
-        func main() {
-            app.Main(func(a app.App) {
-                log.Println("App started")
-            })
-        }
-        EOF
+func main() {
+    app.Main(func(a app.App) {
+        log.Println("App started")
+    })
+}
+EOF
         fi
 
-        # 2. 复制并强制转换为 package main
-        cp cfdata.go main.go
-        sed -i '1s/^package .*/package main/' main.go
+        # 2. 将 cfdata.go 强制改为 package main 并重命名为 main.go（覆盖，确保只有一个文件）
+        sed -i '1s/^package .*/package main/' cfdata.go
+        mv cfdata.go main.go
 
         # 3. 确保存在 main() 函数（若缺失则追加）
         if ! grep -q "^func main()" main.go; then
           cat >> main.go << 'EOF'
 
-        func main() {
-            // 默认入口，可在此调用你的业务逻辑
-            startApp()
-        }
-        EOF
+func main() {
+    // 默认入口，如果你的代码中已经有 main 函数，这段不会执行
+    // 可根据实际业务修改，比如调用你的 WebSocket 扫描逻辑
+}
+EOF
         fi
 
-        # 4. 确保 index.html 存在（防止 go:embed 失败）
+        # 4. 确保 index.html 存在（避免 go:embed 失败）
         if [ ! -f index.html ]; then
-          echo '<!DOCTYPE html><html><body>Hello</body></html>' > index.html
+          echo '<!DOCTYPE html><html><body>CFdata Android App</body></html>' > index.html
         fi
 
         # 5. 初始化 go.mod
@@ -86,6 +86,7 @@ jobs:
       run: |
         export PATH=$PATH:$(go env GOPATH)/bin
         export ANDROID_NDK_HOME=${{ env.ANDROID_NDK_HOME }}
+        # -androidapi=21 解决 NDK 27 不支持 API 16 的问题
         gomobile build -target=android -androidapi=21 -o cfdata.apk .
 
     - name: Upload APK Artifact
