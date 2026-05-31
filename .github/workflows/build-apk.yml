@@ -25,7 +25,6 @@ jobs:
       run: |
         NDK_PATH=$(ls -d $ANDROID_HOME/ndk/* | head -n 1)
         echo "ANDROID_NDK_HOME=$NDK_PATH" >> $GITHUB_ENV
-        echo "NDK 路径已设为: $NDK_PATH"
 
     - name: Install Gomobile and Tools
       run: |
@@ -36,51 +35,30 @@ jobs:
         export ANDROID_NDK_HOME=${{ env.ANDROID_NDK_HOME }}
         gomobile init
 
-    - name: Run Build Script
+    - name: Prepare Clean Code
       run: |
-        cat << 'INNER_EOF' > build.sh
-        #!/bin/bash
-        rm -f go.mod go.sum main.go || true
+        # 1. 彻底删掉之前脚本在虚拟机里生成的干扰文件 main.go 和模块缓存
+        rm -f main.go go.mod go.sum build.sh || true
+        
+        # 2. 核心拯救：强行把 cfdata.go 恢复到你 Git 仓库里最纯净、没有被追加破坏的状态
         git checkout -- cfdata.go || true
         
-        # 1. 核心修复：防止 embed 找不到文件报错
-        if [ ! -f index.html ]; then
-          echo '<!DOCTYPE html><html><head><meta charset="utf-8"><title>CFdata</title></head><body><h1>CFdata Android 后台已启动</h1></body></html>' > index.html
-        fi
-        
-        # 2. 将第一行的 package cfdata 修改为可独立编译成独立 APK 的 package main
+        # 3. 顺应编译要求：确保文件首行包名是 package main（如果原本是 cfdata 就换成 main）
         sed -i '1s/^package .*/package main/' cfdata.go
-        
-        # 3. 在代码头部精确追加标准的移动端基础生命周期库导入
-        sed -i '/import (/a \	"golang.org/x/mobile/app"' cfdata.go
-        
-        # 4. 动态在文件末尾注入干净、纯粹、无版本兼容大坑的独立入口函数 func main()
-        # 将默认测速地址定义为反单引号变量，彻底杜绝所有双引号转义在 YAML 网页端引发的红线
-        echo "" >> cfdata.go
-        echo "var defaultURL = \`speed.cloudflare.com/__down?bytes=100000000\`" >> cfdata.go
-        echo "func main() {" >> cfdata.go
-        echo "	go StartServer(8080, defaultURL)" >> cfdata.go
-        echo "	app.Main(func(a app.App) {" >> cfdata.go
-        echo "		for range a.Events() {}" >> cfdata.go
-        echo "	})" >> cfdata.go
-        echo "}" >> cfdata.go
-        
-        # 5. 清洗并补齐模块依赖
-        go mod init cfdata_app
+
+    - name: Initialize Modules
+      run: |
+        # 4. 以最标准的 package main 模块环境拉取依赖
+        go mod init main
         go get github.com/gorilla/websocket
-        go get golang.org/x/mobile/app
         go mod tidy
-        INNER_EOF
-        
-        # 跑脚本
-        bash build.sh
 
     - name: Build Android APK
       run: |
         export PATH=$PATH:$(go env GOPATH)/bin
         export ANDROID_NDK_HOME=${{ env.ANDROID_NDK_HOME }}
         
-        # 6. 开始整包编译
+        # 5. 纯净编译你原本的代码包，不掺杂任何多余文件
         gomobile build -target=android -androidapi=21 -o cfdata.apk .
 
     - name: Upload APK Artifact
