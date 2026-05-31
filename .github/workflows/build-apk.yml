@@ -20,7 +20,7 @@ jobs:
       with:
         go-version: '1.25.0'
 
-    # 3. 设置 Java 环境 (降级为完美适配 Gradle 8 的 JDK 17)
+    # 3. 设置 Java 环境 (Android NDK 必备底座)
     - name: Set up JDK 17
       uses: actions/setup-java@v4
       with:
@@ -43,70 +43,45 @@ jobs:
       run: |
         gomobile init
 
-    # 6. 将你的 cfdata 编译绑定为标准的安卓原生插件包 (.aar)
-    - name: Bind Go to Android Library
+    # 6. 【高能黑科技】动态注入标准的 gomobile app 窗口生命周期
+    # 直接让 cfdata.go 拥有合法的 package main 和底层安卓生命周期接管能力
+    - name: Inject Android App Lifecycle into Go
       run: |
-        mkdir -p main/libs
-        gomobile bind -target=android/arm64 -androidapi 21 -o main/libs/cfdata.aar .
+        # 1. 强行改成 package main
+        sed -i 's/package cfdata/package main/g' cfdata.go
+        
+        # 2. 在文件末尾追加合法的 main 函数与安卓原生 app 窗口事件监听
+        cat << 'EOF' >> cfdata.go
 
-    # 7. 降级安装官方成熟稳定的 Gradle 8.0 (彻底避开 9.5.1 的致命警告拦截)
-    - name: Setup Gradle 8.0
-      uses: gradle/actions/setup-gradle@v3
+import "golang.org/x/mobile/app"
+
+func main() {
+	// 在后台异步拉起你的高性能测速服务
+	go StartServer(8080, "127.0.0.1")
+
+	// 阻塞并接管安卓应用生命周期，让系统承认它是一个合法的、有生存权的 App
+	app.Main(func(a app.App) {
+		for range a.Events() {
+			// 手机端保持后台不灭即可
+		}
+	})
+}
+EOF
+        echo "=== 检查动态注入后的源码尾部 ==="
+        tail -n 25 cfdata.go
+
+    # 7. 越过所有 Gradle 垃圾配置，直接使用 Go 交叉编译引擎生成 APK！
+    - name: Pure Go Build APK
+      run: |
+        # -androidapi 21 规避新版 NDK 的过旧版本拦截错误
+        gomobile build -target=android -androidapi 21 -o cfdata.apk .
+
+    # 8. 上传最终生成的 APK 安装包
+    - name: Upload APK Artifact
+      uses: actions/upload-artifact@v4
       with:
-        gradle-version: '8.0'
-
-    # 8. 重新生成高度兼容的 Gradle 配置文件
-    - name: Auto Generate Android Gradle Build Files
-      run: |
-        # 1. 兼容 Gradle 8.x 的 settings.gradle
-        cat << 'EOF' > main/settings.gradle
-        pluginManagement {
-            repositories {
-                google()
-                mavenCentral()
-                gradlePluginPortal()
-            }
-        }
-        dependencyResolutionManagement {
-            repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
-            repositories {
-                google()
-                mavenCentral()
-                flatDir {
-                    dirs 'libs'
-                }
-            }
-        }
-        rootProject.name = 'cfdata'
-        EOF
-        
-        # 2. 兼容传统的 build.gradle 声明
-        cat << 'EOF' > main/build.gradle
-        plugins {
-            id 'com.android.application' version '8.0.2'
-            id 'org.jetbrains.kotlin.android' version '1.8.20'
-        }
-        
-        android {
-            namespace 'com.cfdata'
-            compileSdk 33
-        
-            defaultConfig {
-                applicationId "com.cfdata"
-                minSdk 21
-                targetSdk 33
-                versionCode 1
-                versionName "1.0"
-            }
-        
-            buildTypes {
-                release {
-                    minifyEnabled false
-                }
-            }
-            
-            compileOptions {
-                sourceCompatibility JavaVersion.VERSION_17
+        name: cloudflare-ip-data-apk
+        path: cfdata.apk
                 targetCompatibility JavaVersion.VERSION_17
             }
             kotlinOptions {
