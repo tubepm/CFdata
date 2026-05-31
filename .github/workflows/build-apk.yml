@@ -8,106 +8,91 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    env:
+      GRADLE_USER_HOME: ${{ github.workspace }}/.gradle
 
     steps:
-    # 1. 检出源代码
     - name: Checkout Code
       uses: actions/checkout@v4
 
-    # 2. 设置 Go 环境
     - name: Set up Go
       uses: actions/setup-go@v5
       with:
         go-version: '1.25.0'
 
-    # 3. 设置 Java 环境 (使用最稳健的 JDK 17)
     - name: Set up JDK 17
       uses: actions/setup-java@v4
       with:
         java-version: '17'
         distribution: 'temurin'
 
-    # 4. 下载官方 Android NDK
-    - name: Install Android NDK via SDKManager
+    - name: Install Android NDK
       run: |
         echo "y" | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --install "ndk;26.1.10909125"
         echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/26.1.10909125" >> $GITHUB_ENV
 
-    # 5. 安装并配置 gomobile
-    - name: Install Go Mobile
+    - name: Install and Init Go Mobile
       run: |
         go install golang.org/x/mobile/cmd/gomobile@latest
-        echo "$(go env GOPATH)/bin" >> $GITHUB_PATH
-
-    - name: Initialize Go Mobile
-      run: |
         gomobile init
-
-    # 6. 将你的 cfdata 编译绑定为标准的安卓原生插件包 (.aar)
-    - name: Bind Go to Android Library
-      run: |
         mkdir -p main/libs
         gomobile bind -target=android/arm64 -androidapi 21 -o main/libs/cfdata.aar .
 
-    # 7. 全自动补全大项目 Gradle 地基（带有版本强制锁定和彻底屏蔽错误功能）
-    - name: Auto Generate Top-Level and App Gradle Files
+    # 生成 Gradle 包装器，确保环境一致性
+    - name: Setup Gradle Wrapper
       run: |
-        # 1. 在项目真正的根目录生成 settings.gradle
-        echo "pluginManagement {" > settings.gradle
-        echo "    repositories {" >> settings.gradle
-        echo "        google()" >> settings.gradle
-        echo "        mavenCentral()" >> settings.gradle
-        echo "        gradlePluginPortal()" >> settings.gradle
-        echo "    }" >> settings.gradle
-        echo "}" >> settings.gradle
-        echo "dependencyResolutionManagement {" >> settings.gradle
-        echo "    repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)" >> settings.gradle
-        echo "    repositories {" >> settings.gradle
-        echo "        google()" >> settings.gradle
-        echo "        mavenCentral()" >> settings.gradle
-        echo "        flatDir { dirs 'main/libs' }" >> settings.gradle
-        echo "    }" >> settings.gradle
-        echo "}" >> settings.gradle
-        echo "include ':main'" >> settings.gradle
+        gradle wrapper --gradle-version 8.5
+        chmod +x gradlew
+
+    - name: Auto Generate Project Files
+      run: |
+        # settings.gradle
+        cat <<EOF > settings.gradle
+        pluginManagement { repositories { google(); mavenCentral(); gradlePluginPortal() } }
+        dependencyResolutionManagement {
+            repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+            repositories { google(); mavenCentral(); flatDir { dirs 'main/libs' } }
+        }
+        include ':main'
+        EOF
         
-        # 2. 在项目真正的根目录生成主 build.gradle
-        echo "plugins {" > build.gradle
-        echo "    id 'com.android.application' version '8.2.2' apply false" >> build.gradle
-        echo "    id 'org.jetbrains.kotlin.android' version '1.9.22' apply false" >> build.gradle
-        echo "}" >> build.gradle
+        # build.gradle (root)
+        cat <<EOF > build.gradle
+        plugins {
+            id 'com.android.application' version '8.2.2' apply false
+            id 'org.jetbrains.kotlin.android' version '1.9.22' apply false
+        }
+        EOF
         
-        # 3. 重新规范化 main 子目录下的 build.gradle
-        echo "plugins {" > main/build.gradle
-        echo "    id 'com.android.application'" >> main/build.gradle
-        echo "    id 'org.jetbrains.kotlin.android'" >> main/build.gradle
-        echo "}" >> main/build.gradle
-        echo "android {" >> main/build.gradle
-        echo "    namespace 'com.cfdata'" >> main/build.gradle
-        echo "    compileSdk 34" >> main/build.gradle
-        echo "    defaultConfig {" >> main/build.gradle
-        echo "        applicationId 'com.cfdata'" >> main/build.gradle
-        echo "        minSdk 21" >> main/build.gradle
-        echo "        targetSdk 34" >> main/build.gradle
-        echo "        versionCode 1" >> main/build.gradle
-        echo "        versionName '1.0'" >> main/build.gradle
-        echo "    }" >> main/build.gradle
-        echo "    buildTypes {" >> main/build.gradle
-        echo "        release {" >> main/build.gradle
-        echo "            minifyEnabled false" >> main/build.gradle
-        echo "        }" >> main/build.gradle
-        echo "    }" >> main/build.gradle
-        echo "    compileOptions {" >> main/build.gradle
-        echo "        sourceCompatibility JavaVersion.VERSION_17" >> main/build.gradle
-        echo "        targetCompatibility JavaVersion.VERSION_17" >> main/build.gradle
-        echo "    }" >> main/build.gradle
-        echo "    kotlinOptions {" >> main/build.gradle
-        echo "        jvmTarget = '17'" >> main/build.gradle
-        echo "    }" >> main/build.gradle
-        
-        # 【强力降级容错】：彻底关闭一切可能中断构建的严格校验和报错提示
-        echo "    lint {" >> main/build.gradle
-        echo "        abortOnError false" >> main/build.gradle
-        echo "        checkReleaseBuilds false" >> main/build.gradle
+        # main/build.gradle
+        cat <<EOF > main/build.gradle
+        plugins { id 'com.android.application'; id 'org.jetbrains.kotlin.android' }
+        android {
+            namespace 'com.cfdata'; compileSdk 34
+            defaultConfig { applicationId 'com.cfdata'; minSdk 21; targetSdk 34; versionCode 1; versionName '1.0' }
+            buildTypes { release { minifyEnabled false } }
+            compileOptions { sourceCompatibility JavaVersion.VERSION_17; targetCompatibility JavaVersion.VERSION_17 }
+            kotlinOptions { jvmTarget = '17' }
+            lint { abortOnError false; checkReleaseBuilds false }
+        }
+        dependencies {
+            implementation fileTree(dir: 'libs', include: ['*.aar'])
+            implementation 'androidx.core:core-ktx:1.12.0'
+            implementation 'androidx.appcompat:appcompat:1.6.1'
+        }
+        EOF
+
+    # 使用官方 Action 运行构建，它会自动处理并发安全和缓存清理
+    - name: Build with Gradle
+      uses: gradle/gradle-build-action@v3
+      with:
+        arguments: clean :main:assembleDebug --no-daemon --stacktrace
+
+    - name: Upload APK
+      uses: actions/upload-artifact@v4
+      with:
+        name: cloudflare-ip-data-apk
+        path: main/build/outputs/apk/debug/*.apk
         echo "    }" >> main/build.gradle
         echo "}" >> main/build.gradle
         
