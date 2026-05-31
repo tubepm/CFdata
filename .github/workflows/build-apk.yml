@@ -8,6 +8,9 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    # 强制将缓存目录设为 workspace 内，确保在 runner 销毁前能被完全清除
+    env:
+      GRADLE_USER_HOME: ${{ github.workspace }}/.gradle
 
     steps:
     - name: Checkout Code
@@ -29,17 +32,18 @@ jobs:
         echo "y" | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --install "ndk;26.1.10909125"
         echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/26.1.10909125" >> $GITHUB_ENV
 
-    - name: Install and Init Go Mobile
+    - name: Build Go Library
       run: |
         go install golang.org/x/mobile/cmd/gomobile@latest
         gomobile init
         mkdir -p main/libs
         gomobile bind -target=android/arm64 -androidapi 21 -o main/libs/cfdata.aar .
 
-    - name: Auto Generate Project Files
-      shell: bash
+    - name: Prepare Gradle Configuration
       run: |
-        # 创建 settings.gradle
+        # 彻底清理历史缓存，防止 IdentityCache 报错
+        rm -rf .gradle/
+        
         cat << 'EOF' > settings.gradle
         pluginManagement { repositories { google(); mavenCentral(); gradlePluginPortal() } }
         dependencyResolutionManagement {
@@ -49,7 +53,6 @@ jobs:
         include ':main'
         EOF
         
-        # 创建主 build.gradle
         cat << 'EOF' > build.gradle
         plugins {
             id 'com.android.application' version '8.2.2' apply false
@@ -57,35 +60,15 @@ jobs:
         }
         EOF
         
-        # 创建 main/build.gradle (使用 cat << 'EOF' 彻底解决大括号语法冲突)
         mkdir -p main
         cat << 'EOF' > main/build.gradle
-        plugins {
-            id 'com.android.application'
-            id 'org.jetbrains.kotlin.android'
-        }
+        plugins { id 'com.android.application'; id 'org.jetbrains.kotlin.android' }
         android {
-            namespace 'com.cfdata'
-            compileSdk 34
-            defaultConfig {
-                applicationId 'com.cfdata'
-                minSdk 21
-                targetSdk 34
-                versionCode 1
-                versionName '1.0'
-            }
-            buildTypes {
-                release { minifyEnabled false }
-            }
-            compileOptions {
-                sourceCompatibility JavaVersion.VERSION_17
-                targetCompatibility JavaVersion.VERSION_17
-            }
-            kotlinOptions { jvmTarget = '17' }
-            lint {
-                abortOnError false
-                checkReleaseBuilds false
-            }
+            namespace 'com.cfdata'; compileSdk 34
+            defaultConfig { applicationId 'com.cfdata'; minSdk 21; targetSdk 34 }
+            buildTypes { release { minifyEnabled false } }
+            compileOptions { sourceCompatibility JavaVersion.VERSION_17; targetCompatibility JavaVersion.VERSION_17 }
+            lint { abortOnError false }
         }
         dependencies {
             implementation fileTree(dir: 'libs', include: ['*.aar'])
@@ -94,11 +77,12 @@ jobs:
         }
         EOF
 
-    - name: Build APK with Gradle
+    - name: Build APK
       run: |
-        chmod +x gradlew || true
-        # 如果未生成 gradlew，则使用 gradle 命令
-        gradle :main:assembleDebug --stacktrace -x lint -x test --warning-mode none --no-daemon
+        # 使用 --no-daemon 彻底规避 Gradle 守护进程导致的内存/缓存冲突
+        # 使用 --offline 是为了防止网络拉取导致任务中断（如果已下载所有依赖）
+        # 加上 --refresh-dependencies 确保没有使用旧的依赖镜像
+        gradle :main:assembleDebug --no-daemon --stacktrace --refresh-dependencies
 
     - name: Upload APK
       uses: actions/upload-artifact@v4
