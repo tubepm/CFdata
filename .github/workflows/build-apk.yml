@@ -1,91 +1,10 @@
-name: Build Android APK
-
-on:
-  push:
-    branches: [ "main", "master" ]
-  workflow_dispatch:
-
-jobs:
-  build:
-    runs-on: ubuntu-latest
-    # 强制将缓存目录设为 workspace 内，确保在 runner 销毁前能被完全清除
-    env:
-      GRADLE_USER_HOME: ${{ github.workspace }}/.gradle
-
-    steps:
-    - name: Checkout Code
-      uses: actions/checkout@v4
-
-    - name: Set up Go
-      uses: actions/setup-go@v5
-      with:
-        go-version: '1.25.0'
-
-    - name: Set up JDK 17
-      uses: actions/setup-java@v4
-      with:
-        java-version: '17'
-        distribution: 'temurin'
-
-    - name: Install Android NDK
+    - name: Build APK with Gradle
       run: |
-        echo "y" | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --install "ndk;26.1.10909125"
-        echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/26.1.10909125" >> $GITHUB_ENV
-
-    - name: Build Go Library
-      run: |
-        go install golang.org/x/mobile/cmd/gomobile@latest
-        gomobile init
-        mkdir -p main/libs
-        gomobile bind -target=android/arm64 -androidapi 21 -o main/libs/cfdata.aar .
-
-    - name: Prepare Gradle Configuration
-      run: |
-        # 彻底清理历史缓存，防止 IdentityCache 报错
-        rm -rf .gradle/
+        # 1. 删除所有已有的 Gradle 状态和构建输出
+        rm -rf .gradle/ build/ main/.gradle/ main/build/
         
-        cat << 'EOF' > settings.gradle
-        pluginManagement { repositories { google(); mavenCentral(); gradlePluginPortal() } }
-        dependencyResolutionManagement {
-            repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
-            repositories { google(); mavenCentral(); flatDir { dirs 'main/libs' } }
-        }
-        include ':main'
-        EOF
-        
-        cat << 'EOF' > build.gradle
-        plugins {
-            id 'com.android.application' version '8.2.2' apply false
-            id 'org.jetbrains.kotlin.android' version '1.9.22' apply false
-        }
-        EOF
-        
-        mkdir -p main
-        cat << 'EOF' > main/build.gradle
-        plugins { id 'com.android.application'; id 'org.jetbrains.kotlin.android' }
-        android {
-            namespace 'com.cfdata'; compileSdk 34
-            defaultConfig { applicationId 'com.cfdata'; minSdk 21; targetSdk 34 }
-            buildTypes { release { minifyEnabled false } }
-            compileOptions { sourceCompatibility JavaVersion.VERSION_17; targetCompatibility JavaVersion.VERSION_17 }
-            lint { abortOnError false }
-        }
-        dependencies {
-            implementation fileTree(dir: 'libs', include: ['*.aar'])
-            implementation 'androidx.core:core-ktx:1.12.0'
-            implementation 'androidx.appcompat:appcompat:1.6.1'
-        }
-        EOF
-
-    - name: Build APK
-      run: |
-        # 使用 --no-daemon 彻底规避 Gradle 守护进程导致的内存/缓存冲突
-        # 使用 --offline 是为了防止网络拉取导致任务中断（如果已下载所有依赖）
-        # 加上 --refresh-dependencies 确保没有使用旧的依赖镜像
-        gradle :main:assembleDebug --no-daemon --stacktrace --refresh-dependencies
-
-    - name: Upload APK
-      uses: actions/upload-artifact@v4
-      with:
-        name: cloudflare-ip-data-apk
-        path: main/build/outputs/apk/debug/*.apk
+        # 2. 使用绝对路径调用 gradle，并带上彻底禁用守护进程和缓存的参数
+        # --no-build-cache: 禁用构建缓存
+        # --no-daemon: 禁用守护进程，防止进程间污染
+        # --stacktrace: 保持详细报错以便定位（如果还报错的话）
+        gradle :main:assembleDebug --no-build-cache --no-daemon --stacktrace
