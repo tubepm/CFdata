@@ -14,24 +14,19 @@ jobs:
 
     steps:
     - name: Checkout code
-      uses: actions/checkout@v6  # 升级到 v6 支持 node24
+      uses: actions/checkout@v4
 
     - name: Setup Go
       uses: actions/setup-go@v5
       with:
-        go-version: '1.22'
-
-    - name: Setup Android SDK
-      uses: android-actions/setup-android@v3
-      # 或手动设置 Android SDK 环境
+        go-version: 1.22
 
     - name: Setup Android NDK
       run: |
-        # 确保 NDK 存在
-        ls -la $ANDROID_HOME/ndk/ || true
         NDK_PATH=$(ls -d $ANDROID_HOME/ndk/* | sort -V | tail -n1)
         echo "ANDROID_NDK_HOME=$NDK_PATH" >> $GITHUB_ENV
-        echo "NDK found at: $NDK_PATH"
+        echo "NDK=$NDK_PATH" >> $GITHUB_ENV
+        echo "Found NDK: $NDK_PATH"
 
     - name: Install gomobile
       run: |
@@ -49,14 +44,11 @@ jobs:
 
     - name: Prepare source code
       run: |
-        # 修复 package 结构
-        mkdir -p cfdata
-        if [ ! -f cfdata/cfdata.go ]; then
-          echo 'package cfdata' > cfdata/cfdata.go
-          echo 'func Start() { println("ok") }' >> cfdata/cfdata.go
-        fi
-        
-        # 修正 main.go 的导入路径
+        # 1. 使用仓库中的 cfdata.go（已修改为无 embed 版本）
+        # 确保 package 是 cfdata
+        sed -i '1s/^package .*/package cfdata/' cfdata.go
+
+        # 2. 创建 main.go 作为 Android 入口
         cat > main.go << 'MAIN_EOF'
         package main
 
@@ -69,15 +61,17 @@ jobs:
         func main() {
             app.Main(func(a app.App) {
                 log.Println("App started")
-                cfdata.Start()
+                cfdata.StartServer(8080, "")
             })
         }
         MAIN_EOF
 
+        # 3. 创建占位 index.html（gomobile 构建需要文件存在）
         if [ ! -f index.html ]; then
           echo '<html><body>CFdata</body></html>' > index.html
         fi
 
+        # 4. 初始化 go module
         rm -f go.mod go.sum
         go mod init cfdata_app
         go get github.com/gorilla/websocket
