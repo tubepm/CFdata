@@ -3,7 +3,7 @@ name: Build Android APK
 on:
   push:
     branches: [ "main" ]
-  workflow_dispatch:      # 支持在网页上手动点击按钮一键触发
+  workflow_dispatch:      # 支持手动一键触发编译
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true # 屏蔽 2026 年 Node 废弃警告
@@ -23,7 +23,7 @@ jobs:
 
     - name: Set up Android NDK Env
       run: |
-        # 核心修复：自动寻找 GitHub 虚拟机自带的 NDK 路径并注入环境变量
+        # 自动寻找并绑定 GitHub 虚拟机自带的 NDK 路径
         NDK_PATH=$(ls -d $ANDROID_HOME/ndk/* | head -n 1)
         echo "ANDROID_NDK_HOME=$NDK_PATH" >> $GITHUB_ENV
         echo "NDK 路径已自动绑定为: $NDK_PATH"
@@ -34,16 +34,15 @@ jobs:
         go install golang.org/x/mobile/cmd/gobind@latest
         echo "PATH=$PATH:$(go env GOPATH)/bin" >> $GITHUB_ENV
         export PATH=$PATH:$(go env GOPATH)/bin
-        # 传入环境变量初始化 gomobile
         export ANDROID_NDK_HOME=${{ env.ANDROID_NDK_HOME }}
         gomobile init
 
-    - name: Setup Go Module and Fix Case Issue
+    - name: Setup Go Module and Fix Code
       run: |
-        # 强制将 cfdata.go 里的大写 Package 替换为标准小写 package，防手误
+        # 1. 强制将首字母大写 Package 替换为标准小写 package，防止任何手误隐患
         sed -i 's/^Package main/package main/g' cfdata.go
         
-        # 规范化清理并更新依赖关系
+        # 2. 规范化初始化依赖关系
         rm -f go.mod go.sum || true
         go mod init cfdata
         go get github.com/gorilla/websocket
@@ -53,9 +52,10 @@ jobs:
       run: |
         export PATH=$PATH:$(go env GOPATH)/bin
         export ANDROID_NDK_HOME=${{ env.ANDROID_NDK_HOME }}
-        # 编译当前 main 包为独立的安卓应用成品
-        gomobile build -target=android -o cfdata.apk .
-
+        
+        # 核心修复：显式指定编译 cfdata.go 文件，不再使用模糊的 "." 路径，彻底解决 undefined 错误
+        gomobile build -target=android -o cfdata.apk cfdata.go
+        
     - name: Upload Finished APK Artifact
       uses: actions/upload-artifact@v4
       with:
