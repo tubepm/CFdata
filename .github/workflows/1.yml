@@ -41,46 +41,29 @@ jobs:
       - name: Fix cfdata.go duplicate code
         run: |
           echo "=== 开始修复 cfdata.go ==="
-
           if [ ! -f cfdata.go ]; then
             echo "错误: cfdata.go 不存在!"
             exit 1
           fi
-
           TOTAL_LINES=$(wc -l < cfdata.go)
           echo "总行数: $TOTAL_LINES"
-
-          # 方法1：找到 "return filepath.Join(dataDir, name)" 的位置
-          JOIN_LINE=$(grep -n "return filepath.Join(dataDir, name)" cfdata.go | tail -1 | cut -d: -f1)
-          echo "'return filepath.Join(dataDir, name)' 在第 $JOIN_LINE 行"
-
-          # 方法2：找到 "func getRandomIPv6s" 函数结束的位置
-          # 通过查找 "return randomIPs" 或 "}" 来定位
-
-          # 方法3：直接删除第751行之后的内容（如果总行数>751）
           if [ "$TOTAL_LINES" -gt 751 ]; then
-            echo "文件超过751行，删除第751行之后的内容"
+            echo "删除第751行之后的内容"
             head -n 750 cfdata.go > cfdata.go.tmp
             mv cfdata.go.tmp cfdata.go
             echo "修复完成，新行数: $(wc -l < cfdata.go)"
           fi
-
-          echo "=== 修复后文件末尾 ==="
-          tail -20 cfdata.go
           echo "=== 修复完成 ==="
 
       - name: Build Go AAR
         run: |
-          echo "=== 开始编译 Go AAR ==="
           go install golang.org/x/mobile/cmd/gomobile@latest
           go install golang.org/x/mobile/cmd/gobind@latest
           export PATH=$HOME/go/bin:$PATH
           export ANDROID_NDK_HOME=${{ steps.setup-ndk.outputs.ndk-path }}
-          echo "Using NDK: $ANDROID_NDK_HOME"
           gomobile init
           mkdir -p main/libs
           gomobile bind -v -o main/libs/cfdata.aar -target=android ./
-          echo "=== Go AAR 编译完成 ==="
 
       - name: Setup Gradle Wrapper
         run: |
@@ -101,12 +84,18 @@ jobs:
           echo 'cGx1Z2lucyB7CiAgICBpZCAiY29tLmFuZHJvaWQuYXBwbGljYXRpb24iIHZlcnNpb24gIjguMi4wIiBhcHBseSBmYWxzZQp9Cg==' | base64 -d > build.gradle
           echo 'cGx1Z2luTWFuYWdlbWVudCB7CiAgICByZXBvc2l0b3JpZXMgewogICAgICAgIGdvb2dsZSgpCiAgICAgICAgbWF2ZW5DZW50cmFsKCkKICAgICAgICBncmFkbGVQbHVnaW5Qb3J0YWwoKQogICAgfQp9CmRlcGVuZGVuY3lSZXNvbHV0aW9uTWFuYWdlbWVudCB7CiAgICByZXBvc2l0b3JpZXNNb2RlLnNldChSZXBvc2l0b3JpZXNNb2RlLlBSRUZFUl9TRVRUSU5HUykKICAgIHJlcG9zaXRvcmllcyB7CiAgICAgICAgZ29vZ2xlKCkKICAgICAgICBtYXZlbkNlbnRyYWwoKQogICAgICAgIGZsYXREaXIgeyBkaXJzICJtYWluL2xpYnMiIH0KICAgIH0KfQpyb290UHJvamVjdC5uYW1lID0gIkNGZGF0YSIKaW5jbHVkZSAiOm1haW4iCg==' | base64 -d > settings.gradle
           echo 'YW5kcm9pZC51c2VBbmRyb2lkWD10cnVlCmFuZHJvaWQuZW5hYmxlSmV0aWZpZXI9dHJ1ZQpvcmcuZ3JhZGxlLmp2bWFyZ3M9LVhteDIwNDhtCg==' | base64 -d > gradle.properties
-          echo 'cGx1Z2lucyB7CiAgICBpZCAiY29tLmFuZHJvaWQuYXBwbGljYXRpb24iCn0KYW5kcm9pZCB7CiAgICBuYW1lc3BhY2UgImNvbS5jZmRhdGEiCiAgICBjb21waWxlU2RrIDM0CiAgICBkZWZhdWx0Q29uZmlnIHsKICAgICAgICBhcHBsaWNhdGlvbklkICJjb20uY2ZkYXRhIgogICAgICAgIG1pblNkayAyMQogICAgICAgIHRhcmdldFNkayAzNAogICAgICAgIHZlcnNpb25Db2RlIDEKICAgICAgICB2ZXJzaW9uTmFtZSAiMS4wIgogICAgfQogICAgc291cmNlU2V0cyB7CiAgICAgICAgbWFpbiB7CiAgICAgICAgICAgIG1hbmlmZXN0LnNyY0ZpbGUgIkFuZHJvaWRNYW5pZmVzdC54bWwiCiAgICAgICAgICAgIGphdmEuc3JjRGlycyA9IFsiamF2YSJdCiAgICAgICAgICAgIHJlcy5zcmNEaXJzID0gWyJyZXMiXQogICAgICAgIH0KICAgIH0KICAgIGJ1aWxkVHlwZXMgewogICAgICAgIHJlbGVhc2UgewogICAgICAgICAgICBtaW5pZnlFbmFibGVkIHRydWUKICAgICAgICAgICAgcHJvZ3VhcmRGaWxlcyBnZXRkZWZhdWx0UHJvZ3VhcmRGaWxlKCJwcm9ndWFyZC1hbmRyb2lkLW9wdGltaXplLnR4dCIpLCAicHJvZ3VhcmQtcnVsZXMucHJvIgogICAgICAgICAgICBzaHJpbmtSZXNvdXJjZXMgdHJ1ZQogICAgICAgIH0KICAgICAgICBkZWJ1ZyB7CiAgICAgICAgICAgIGRlYnVnZ2FibGUgdHJ1ZQogICAgICAgICAgICBtaW5pZnlFbmFibGVkIGZhbHNlCiAgICAgICAgfQogICAgfQogICAgY29tcGlsZU9wdGlvbnMgewogICAgICAgIHNvdXJjZUNvbXBhdGliaWxpdHkgSmF2YVZlcnNpb24uVkVSU0lPTl8xNwogICAgICAgIHRhcmdldENvbXBhdGliaWxpdHkgSmF2YVZlcnNpb24uVkVSU0lPTl8xNwogICAgfQp9CmRlcGVuZGVuY2llcyB7CiAgICBpbXBsZW1lbnRhdGlvbiAiYW5kcm9pZHguYXBwY29tcGF0OmFwcGNvbXBhdDoxLjYuMSIKICAgIGltcGxlbWVudGF0aW9uICJjb20uZ29vZ2xlLmFuZHJvaWQubWF0ZXJpYWw6bWF0ZXJpYWw6MS4xMS4wIgogICAgaW1wbGVtZW50YXRpb24obmFtZTogImNmZGF0YSIsIGV4dDogImFhciIpCn0K' | base64 -d > main/build.gradle
+          # main/build.gradle (修复getDefaultProguardFile拼写)
+          echo 'cGx1Z2lucyB7CiAgICBpZCAiY29tLmFuZHJvaWQuYXBwbGljYXRpb24iCn0KYW5kcm9pZCB7CiAgICBuYW1lc3BhY2UgImNvbS5jZmRhdGEiCiAgICBjb21waWxlU2RrIDM0CiAgICBkZWZhdWx0Q29uZmlnIHsKICAgICAgICBhcHBsaWNhdGlvbklkICJjb20uY2ZkYXRhIgogICAgICAgIG1pblNkayAyMQogICAgICAgIHRhcmdldFNkayAzNAogICAgICAgIHZlcnNpb25Db2RlIDEKICAgICAgICB2ZXJzaW9uTmFtZSAiMS4wIgogICAgfQogICAgc291cmNlU2V0cyB7CiAgICAgICAgbWFpbiB7CiAgICAgICAgICAgIG1hbmlmZXN0LnNyY0ZpbGUgIkFuZHJvaWRNYW5pZmVzdC54bWwiCiAgICAgICAgICAgIGphdmEuc3JjRGlycyA9IFsiamF2YSJdCiAgICAgICAgICAgIHJlcy5zcmNEaXJzID0gWyJyZXMiXQogICAgICAgIH0KICAgIH0KICAgIGJ1aWxkVHlwZXMgewogICAgICAgIHJlbGVhc2UgewogICAgICAgICAgICBtaW5pZnlFbmFibGVkIHRydWUKICAgICAgICAgICAgcHJvZ3VhcmRGaWxlcyBnZXREZWZhdWx0UHJvZ3VhcmRGaWxlKCJwcm9ndWFyZC1hbmRyb2lkLW9wdGltaXplLnR4dCIpLCAicHJvZ3VhcmQtcnVsZXMucHJvIgogICAgICAgICAgICBzaHJpbmtSZXNvdXJjZXMgdHJ1ZQogICAgICAgIH0KICAgICAgICBkZWJ1ZyB7CiAgICAgICAgICAgIGRlYnVnZ2FibGUgdHJ1ZQogICAgICAgICAgICBtaW5pZnlFbmFibGVkIGZhbHNlCiAgICAgICAgfQogICAgfQogICAgY29tcGlsZU9wdGlvbnMgewogICAgICAgIHNvdXJjZUNvbXBhdGliaWxpdHkgSmF2YVZlcnNpb24uVkVSU0lPTl8xNwogICAgICAgIHRhcmdldENvbXBhdGliaWxpdHkgSmF2YVZlcnNpb24uVkVSU0lPTl8xNwogICAgfQp9CmRlcGVuZGVuY2llcyB7CiAgICBpbXBsZW1lbnRhdGlvbiAiYW5kcm9pZHguYXBwY29tcGF0OmFwcGNvbXBhdDoxLjYuMSIKICAgIGltcGxlbWVudGF0aW9uICJjb20uZ29vZ2xlLmFuZHJvaWQubWF0ZXJpYWw6bWF0ZXJpYWw6MS4xMS4wIgogICAgaW1wbGVtZW50YXRpb24obmFtZTogImNmZGF0YSIsIGV4dDogImFhciIpCn0K' | base64 -d > main/build.gradle
           echo '-keep class com.cfdata.** { *; }' > main/proguard-rules.pro
 
       - name: Build Release APK
         run: ./gradlew :main:assembleRelease --stacktrace
 
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: CFdata-release
+          path: main/build/outputs/apk/release/*.apk
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
