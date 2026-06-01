@@ -22,40 +22,29 @@ jobs:
         with:
           api-level: 34
           build-tools: 34.0.0
-          ndk: 25.2.9519653
 
-      - name: Try Build Go AAR
-        continue-on-error: true
+      # 安装gomobile兼容的NDK r21e
+      - name: Setup NDK r21e
+        uses: nttld/setup-ndk@v1
+        with:
+          ndk-version: r21e
+          link-to-sdk: true
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+
+      # 编译Go AAR
+      - name: Build Go AAR
         run: |
-          curl -sL https://go.dev/dl/go1.22.0.linux-amd64.tar.gz | tar -C /tmp -xzf -
-          export PATH=/tmp/go/bin:$PATH
-          go version
           go install golang.org/x/mobile/cmd/gomobile@latest
           go install golang.org/x/mobile/cmd/gobind@latest
           export PATH=$HOME/go/bin:$PATH
-          NDK_PATH=$(find $ANDROID_SDK_ROOT/ndk -name "meta" -type d 2>/dev/null | head -1 | sed 's|/meta||')
-          if [ -z "$NDK_PATH" ]; then
-            NDK_PATH=$ANDROID_SDK_ROOT/ndk/25.2.9519653
-          fi
-          echo "NDK_PATH=$NDK_PATH"
-          export ANDROID_NDK_HOME=$NDK_PATH
-          gomobile init || true
-          mkdir -p $GITHUB_WORKSPACE/main/libs
-          gomobile bind -v -o $GITHUB_WORKSPACE/main/libs/cfdata.aar -target=android ./ || echo "Gomobile failed, will use stub"
+          gomobile init
+          mkdir -p main/libs
+          gomobile bind -v -o main/libs/cfdata.aar -target=android ./
 
-      - name: Create Stub AAR if needed
-        run: |
-          mkdir -p $GITHUB_WORKSPACE/main/libs
-          if [ ! -f $GITHUB_WORKSPACE/main/libs/cfdata.aar ]; then
-            echo "Creating stub AAR..."
-            mkdir -p /tmp/aar-stub/jni/arm64-v8a
-            echo 'PK' > /tmp/aar-stub/jni/arm64-v8a/libstub.so
-            echo '<?xml version="1.0" encoding="utf-8"?><manifest package="com.cfdata.cfdata" />' > /tmp/aar-stub/AndroidManifest.xml
-            cd /tmp/aar-stub && zip -r $GITHUB_WORKSPACE/main/libs/cfdata.aar AndroidManifest.xml jni/
-          fi
-          ls -la $GITHUB_WORKSPACE/main/libs/
-          file $GITHUB_WORKSPACE/main/libs/cfdata.aar
-
+      # 创建Gradle wrapper
       - name: Setup Gradle Wrapper
         run: |
           mkdir -p gradle/wrapper
@@ -72,23 +61,17 @@ jobs:
 
       - name: Setup Gradle Build Files
         run: |
-          # build.gradle
           echo 'cGx1Z2lucyB7CiAgICBpZCAiY29tLmFuZHJvaWQuYXBwbGljYXRpb24iIHZlcnNpb24gIjguMi4wIiBhcHBseSBmYWxzZQp9Cg==' | base64 -d > build.gradle
-
-          # settings.gradle
           echo 'cGx1Z2luTWFuYWdlbWVudCB7CiAgICByZXBvc2l0b3JpZXMgewogICAgICAgIGdvb2dsZSgpCiAgICAgICAgbWF2ZW5DZW50cmFsKCkKICAgICAgICBncmFkbGVQbHVnaW5Qb3J0YWwoKQogICAgfQp9CmRlcGVuZGVuY3lSZXNvbHV0aW9uTWFuYWdlbWVudCB7CiAgICByZXBvc2l0b3JpZXNNb2RlLnNldChSZXBvc2l0b3JpZXNNb2RlLlBSRUZFUl9TRVRUSU5HUykKICAgIHJlcG9zaXRvcmllcyB7CiAgICAgICAgZ29vZ2xlKCkKICAgICAgICBtYXZlbkNlbnRyYWwoKQogICAgICAgIGZsYXREaXIgeyBkaXJzICJtYWluL2xpYnMiIH0KICAgIH0KfQpyb290UHJvamVjdC5uYW1lID0gIkNGZGF0YSIKaW5jbHVkZSAiOm1haW4iCg==' | base64 -d > settings.gradle
-
-          # gradle.properties
           echo 'YW5kcm9pZC51c2VBbmRyb2lkWD10cnVlCmFuZHJvaWQuZW5hYmxlSmV0aWZpZXI9dHJ1ZQpvcmcuZ3JhZGxlLmp2bWFyZ3M9LVhteDIwNDhtCg==' | base64 -d > gradle.properties
+          echo 'cGx1Z2lucyB7CiAgICBpZCAiY29tLmFuZHJvaWQuYXBwbGljYXRpb24iCn0KYW5kcm9pZCB7CiAgICBuYW1lc3BhY2UgImNvbS5jZmRhdGEiCiAgICBjb21waWxlU2RrIDM0CiAgICBkZWZhdWx0Q29uZmlnIHsKICAgICAgICBhcHBsaWNhdGlvbklkICJjb20uY2ZkYXRhIgogICAgICAgIG1pblNkayAyMQogICAgICAgIHRhcmdldFNkayAzNAogICAgICAgIHZlcnNpb25Db2RlIDEKICAgICAgICB2ZXJzaW9uTmFtZSAiMS4wIgogICAgfQogICAgc291cmNlU2V0cyB7CiAgICAgICAgbWFpbiB7CiAgICAgICAgICAgIG1hbmlmZXN0LnNyY0ZpbGUgIkFuZHJvaWRNYW5pZmVzdC54bWwiCiAgICAgICAgICAgIGphdmEuc3JjRGlycyA9IFsiamF2YSJdCiAgICAgICAgICAgIHJlcy5zcmNEaXJzID0gWyJyZXMiXQogICAgICAgIH0KICAgIH0KICAgIGJ1aWxkVHlwZXMgewogICAgICAgIHJlbGVhc2UgewogICAgICAgICAgICBtaW5pZnlFbmFibGVkIHRydWUKICAgICAgICAgICAgcHJvZ3VhcmRGaWxlcyBnZXREZWZhdWx0UHJvZ3VhcmRGaWxlKCJwcm9ndWFyZC1hbmRyb2lkLW9wdGltaXplLnR4dCIpLCAicHJvZ3VhcmQtcnVsZXMucHJvIgogICAgICAgICAgICBzaHJpbmtSZXNvdXJjZXMgdHJ1ZQogICAgICAgIH0KICAgICAgICBkZWJ1ZyB7CiAgICAgICAgICAgIGRlYnVnZ2FibGUgdHJ1ZQogICAgICAgICAgICBtaW5pZnlFbmFibGVkIGZhbHNlCiAgICAgICAgfQogICAgfQogICAgY29tcGlsZU9wdGlvbnMgewogICAgICAgIHNvdXJjZUNvbXBhdGliaWxpdHkgSmF2YVZlcnNpb24uVkVSU0lPTl8xNwogICAgICAgIHRhcmdldENvbXBhdGliaWxpdHkgSmF2YVZlcnNpb24uVkVSU0lPTl8xNwogICAgfQp9CmRlcGVuZGVuY2llcyB7CiAgICBpbXBsZW1lbnRhdGlvbiAiYW5kcm9pZHguYXBwY29tcGF0OmFwcGNvbXBhdDoxLjYuMSIKICAgIGltcGxlbWVudGF0aW9uICJjb20uZ29vZ2xlLmFuZHJvaWQubWF0ZXJpYWw6bWF0ZXJpYWw6MS4xMS4wIgogICAgaW1wbGVtZW50YXRpb24obmFtZTogImNmZGF0YSIsIGV4dDogImFhciIpCn0K' | base64 -d > main/build.gradle
+          echo '-keep class com.cfdata.** { *; }' > main/proguard-rules.pro
 
-          # main/build.gradle (修复版，添加Material依赖)
-          echo 'cGx1Z2lucyB7CiAgICBpZCAiY29tLmFuZHJvaWQuYXBwbGljYXRpb24iCn0KYW5kcm9pZCB7CiAgICBuYW1lc3BhY2UgImNvbS5jZmRhdGEiCiAgICBjb21waWxlU2RrIDM0CiAgICBkZWZhdWx0Q29uZmlnIHsKICAgICAgICBhcHBsaWNhdGlvbklkICJjb20uY2ZkYXRhIgogICAgICAgIG1pblNkayAyMQogICAgICAgIHRhcmdldFNkayAzNAogICAgICAgIHZlcnNpb25Db2RlIDEKICAgICAgICB2ZXJzaW9uTmFtZSAiMS4wIgogICAgfQogICAgc291cmNlU2V0cyB7CiAgICAgICAgbWFpbiB7CiAgICAgICAgICAgIG1hbmlmZXN0LnNyY0ZpbGUgIkFuZHJvaWRNYW5pZmVzdC54bWwiCiAgICAgICAgICAgIGphdmEuc3JjRGlycyA9IFsiamF2YSJdCiAgICAgICAgICAgIHJlcy5zcmNEaXJzID0gWyJyZXMiXQogICAgICAgIH0KICAgIH0KICAgIGJ1aWxkVHlwZXMgewogICAgICAgIHJlbGVhc2UgewogICAgICAgICAgICBtaW5pZnlFbmFibGVkIGZhbHNlCiAgICAgICAgfQogICAgICAgIGRlYnVnIHsKICAgICAgICAgICAgZGVidWdnYWJsZSB0cnVlCiAgICAgICAgfQogICAgfQogICAgY29tcGlsZU9wdGlvbnMgewogICAgICAgIHNvdXJjZUNvbXBhdGliaWxpdHkgSmF2YVZlcnNpb24uVkVSU0lPTl8xNwogICAgICAgIHRhcmdldENvbXBhdGliaWxpdHkgSmF2YVZlcnNpb24uVkVSU0lPTl8xNwogICAgfQp9CmRlcGVuZGVuY2llcyB7CiAgICBpbXBsZW1lbnRhdGlvbiAiYW5kcm9pZHguYXBwY29tcGF0OmFwcGNvbXBhdDoxLjYuMSIKICAgIGltcGxlbWVudGF0aW9uICJjb20uZ29vZ2xlLmFuZHJvaWQubWF0ZXJpYWw6bWF0ZXJpYWw6MS4xMS4wIgogICAgaW1wbGVtZW50YXRpb24obmFtZTogImNmZGF0YSIsIGV4dDogImFhciIpCn0K' | base64 -d > main/build.gradle
-
-      - name: Build Debug APK
-        run: ./gradlew :main:assembleDebug --stacktrace
+      - name: Build Release APK
+        run: ./gradlew :main:assembleRelease --stacktrace
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: CFdata-test
-          path: main/build/outputs/apk/debug/*.apk
+          name: CFdata-release
+          path: main/build/outputs/apk/release/*.apk
