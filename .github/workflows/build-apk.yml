@@ -100,7 +100,7 @@ jobs:
           '    compileSdk 34' \
           '    defaultConfig {' \
           "        applicationId 'com.cfdata'" \
-          '        minSdk 21' \
+          '        minSdk 24' \      # ← 从 21 改为 24
           '        targetSdk 34' \
           '        versionCode 1' \
           "        versionName '1.0'" \
