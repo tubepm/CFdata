@@ -72,41 +72,26 @@ jobs:
 
       - name: Setup Gradle Build Files
         run: |
-          # build.gradle - 用tee一次性写入多行
-          tee build.gradle > /dev/null <<'EOF'
-plugins {
-    id "com.android.application" version "8.2.0" apply false
-}
-EOF
+          # build.gradle (base64 encoded)
+          echo 'cGx1Z2lucyB7CiAgICBpZCAiY29tLmFuZHJvaWQuYXBwbGljYXRpb24iIHZlcnNpb24gIjguMi4wIiBhcHBseSBmYWxzZQp9Cg==' | base64 -d > build.gradle
 
-          # settings.gradle - 用tee一次性写入多行
-          tee settings.gradle > /dev/null <<'EOF'
-pluginManagement {
-    repositories {
-        google()
-        mavenCentral()
-        gradlePluginPortal()
-    }
-}
-dependencyResolutionManagement {
-    repositoriesMode.set(RepositoriesMode.PREFER_SETTINGS)
-    repositories {
-        google()
-        mavenCentral()
-        flatDir { dirs "main/libs" }
-    }
-}
-rootProject.name = "CFdata"
-include ":main"
-EOF
+          # settings.gradle (base64 encoded)
+          echo 'cGx1Z2luTWFuYWdlbWVudCB7CiAgICByZXBvc2l0b3JpZXMgewogICAgICAgIGdvb2dsZSgpCiAgICAgICAgbWF2ZW5DZW50cmFsKCkKICAgICAgICBncmFkbGVQbHVnaW5Qb3J0YWwoKQogICAgfQp9CmRlcGVuZGVuY3lSZXNvbHV0aW9uTWFuYWdlbWVudCB7CiAgICByZXBvc2l0b3JpZXNNb2RlLnNldChSZXBvc2l0b3JpZXNNb2RlLlBSRUZFUl9TRVRUSU5HUykKICAgIHJlcG9zaXRvcmllcyB7CiAgICAgICAgZ29vZ2xlKCkKICAgICAgICBtYXZlbkNlbnRyYWwoKQogICAgICAgIGZsYXREaXIgeyBkaXJzICJtYWluL2xpYnMiIH0KICAgIH0KfQpyb290UHJvamVjdC5uYW1lID0gIkNGZGF0YSIKaW5jbHVkZSAiOm1haW4iCg==' | base64 -d > settings.gradle
 
-          # gradle.properties
-          echo 'android.useAndroidX=true' > gradle.properties
-          echo 'android.enableJetifier=true' >> gradle.properties
-          echo 'org.gradle.jvmargs=-Xmx2048m' >> gradle.properties
+          # gradle.properties (base64 encoded)
+          echo 'YW5kcm9pZC51c2VBbmRyb2lkWD10cnVlCmFuZHJvaWQuZW5hYmxlSmV0aWZpZXI9dHJ1ZQpvcmcuZ3JhZGxlLmp2bWFyZ3M9LVhteDIwNDhtCg==' | base64 -d > gradle.properties
 
-          # main/build.gradle - 用tee一次性写入多行
-          tee main/build.gradle > /dev/null <<'EOF'
+          # main/build.gradle (base64 encoded)
+          echo 'cGx1Z2lucyB7CiAgICBpZCAiY29tLmFuZHJvaWQuYXBwbGljYXRpb24iCn0KYW5kcm9pZCB7CiAgICBuYW1lc3BhY2UgImNvbS5jZmRhdGEiCiAgICBjb21waWxlU2RrIDM0CiAgICBkZWZhdWx0Q29uZmlnIHsKICAgICAgICBhcHBsaWNhdGlvbklkICJjb20uY2ZkYXRhIgogICAgICAgIG1pblNkayAyMQogICAgICAgIHRhcmdldFNkayAzNAogICAgICAgIHZlcnNpb25Db2RlIDEKICAgICAgICB2ZXJzaW9uTmFtZSAiMS4wIgogICAgfQogICAgYnVpbGRUeXBlcyB7CiAgICAgICAgcmVsZWFzZSB7CiAgICAgICAgICAgIG1pbmlmeUVuYWJsZWQgZmFsc2UKICAgICAgICB9CiAgICAgICAgZGVidWcgewogICAgICAgICAgICBkZWJ1Z2dhYmxlIHRydWUKICAgICAgICB9CiAgICB9CiAgICBjb21waWxlT3B0aW9ucyB7CiAgICAgICAgc291cmNlQ29tcGF0aWJpbGl0eSBKYXZhVmVyc2lvbi5WRVJTSU9OXzE3CiAgICAgICAgdGFyZ2V0Q29tcGF0aWJpbGl0eSBKYXZhVmVyc2lvbi5WRVJTSU9OXzE3CiAgICB9Cn0KZGVwZW5kZW5jaWVzIHsKICAgIGltcGxlbWVudGF0aW9uICJhbmRyb2lkeC5hcHBjb21wYXQ6YXBwY29tcGF0OjEuNi4xIgogICAgaW1wbGVtZW50YXRpb24obmFtZTogImNmZGF0YSIsIGV4dDogImFhciIpCn0K' | base64 -d > main/build.gradle
+
+      - name: Build Debug APK
+        run: ./gradlew :main:assembleDebug --stacktrace
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: CFdata-test
+          path: main/build/outputs/apk/debug/*.apk
 plugins {
     id "com.android.application"
 }
