@@ -132,7 +132,7 @@ func StartServer(port int, url string) error {
 
 	http.HandleFunc("/ws", handleWebSocket)
 
-	addr := fmt.Sprintf(":%d", listenPort)
+	addr := fmt.Sprintf("127.0.0.1:%d", listenPort)
 	fmt.Printf("服务启动于 http://localhost:%d\n", listenPort)
 	fmt.Printf("测速地址: %s\n", speedTestURL)
 
