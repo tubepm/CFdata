@@ -35,13 +35,36 @@ jobs:
         with:
           go-version: '1.22'
 
+      # 修复cfdata.go的重复代码问题
+      - name: Fix cfdata.go duplicate code
+        run: |
+          echo "检查cfdata.go中的重复函数..."
+          grep -n "^func dataPath" cfdata.go || true
+          
+          # 找到第二个 dataPath 函数的位置
+          SECOND_DATAPATH=$(grep -n "^func dataPath" cfdata.go | tail -1 | cut -d: -f1)
+          FIRST_DATAPATH=$(grep -n "^func dataPath" cfdata.go | head -1 | cut -d: -f1)
+          
+          echo "第一个 dataPath 在第 $FIRST_DATAPATH 行"
+          echo "第二个 dataPath 在第 $SECOND_DATAPATH 行"
+          
+          if [ "$SECOND_DATAPATH" != "$FIRST_DATAPATH" ]; then
+            echo "发现重复代码，删除第 $SECOND_DATAPATH 行之后的内容..."
+            head -n $((SECOND_DATAPATH - 1)) cfdata.go > cfdata.go.tmp
+            mv cfdata.go.tmp cfdata.go
+            echo "修复完成"
+          fi
+          
+          # 验证修复
+          echo "修复后的函数列表："
+          grep -n "^func " cfdata.go
+
       # 编译Go AAR
       - name: Build Go AAR
         run: |
           go install golang.org/x/mobile/cmd/gomobile@latest
           go install golang.org/x/mobile/cmd/gobind@latest
           export PATH=$HOME/go/bin:$PATH
-          # 强制使用r21e NDK
           export ANDROID_NDK_HOME=${{ steps.setup-ndk.outputs.ndk-path }}
           echo "Using NDK: $ANDROID_NDK_HOME"
           gomobile init
