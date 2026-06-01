@@ -34,7 +34,7 @@ jobs:
           go install golang.org/x/mobile/cmd/gomobile@latest
           go install golang.org/x/mobile/cmd/gobind@latest
           export PATH=$HOME/go/bin:$PATH
-
+          
           # 查找NDK路径
           NDK_PATH=$(find $ANDROID_SDK_ROOT/ndk -name "meta" -type d 2>/dev/null | head -1 | sed 's|/meta||')
           if [ -z "$NDK_PATH" ]; then
@@ -42,7 +42,7 @@ jobs:
           fi
           echo "NDK_PATH=$NDK_PATH"
           export ANDROID_NDK_HOME=$NDK_PATH
-
+          
           gomobile init || true
           mkdir -p $GITHUB_WORKSPACE/main/libs
           gomobile bind -v -o $GITHUB_WORKSPACE/main/libs/cfdata.aar -target=android ./ || echo "Gomobile failed, will use stub"
@@ -52,7 +52,7 @@ jobs:
         run: |
           # 确保目录存在
           mkdir -p $GITHUB_WORKSPACE/main/libs
-
+          
           if [ ! -f $GITHUB_WORKSPACE/main/libs/cfdata.aar ]; then
             echo "Creating stub AAR..."
             mkdir -p /tmp/aar-stub/jni/arm64-v8a
@@ -60,7 +60,7 @@ jobs:
             echo '<?xml version="1.0" encoding="utf-8"?><manifest package="com.cfdata.cfdata" />' > /tmp/aar-stub/AndroidManifest.xml
             cd /tmp/aar-stub && zip -r $GITHUB_WORKSPACE/main/libs/cfdata.aar AndroidManifest.xml jni/
           fi
-
+          
           # 验证AAR存在
           ls -la $GITHUB_WORKSPACE/main/libs/
           file $GITHUB_WORKSPACE/main/libs/cfdata.aar
@@ -70,7 +70,7 @@ jobs:
         run: |
           mkdir -p gradle/wrapper
           curl -sL "https://raw.githubusercontent.com/gradle/gradle/v8.2.0/gradle/wrapper/gradle-wrapper.jar" -o gradle/wrapper/gradle-wrapper.jar
-
+          
           cat > gradle/wrapper/gradle-wrapper.properties << 'P'
           distributionBase=GRADLE_USER_HOME
           distributionPath=wrapper/dists
@@ -79,7 +79,7 @@ jobs:
           zipStoreBase=GRADLE_USER_HOME
           zipStorePath=wrapper/dists
           P
-
+          
           curl -sL "https://raw.githubusercontent.com/gradle/gradle/v8.2.0/gradlew" -o gradlew
           curl -sL "https://raw.githubusercontent.com/gradle/gradle/v8.2.0/gradlew.bat" -o gradlew.bat
           chmod +x gradlew
@@ -107,6 +107,65 @@ jobs:
               repositoriesMode.set(RepositoriesMode.PREFER_SETTINGS)
               repositories {
                   google()
+                  mavenCentral()
+                  flatDir { dirs 'main/libs' }
+              }
+          }
+          rootProject.name = "CFdata"
+          include ':main'
+          G
+
+          # gradle.properties
+          cat > gradle.properties << 'P'
+          android.useAndroidX=true
+          android.enableJetifier=true
+          org.gradle.jvmargs=-Xmx2048m
+          P
+
+          # main/build.gradle
+          cat > main/build.gradle << 'G'
+          plugins {
+              id 'com.android.application'
+          }
+          android {
+              namespace 'com.cfdata'
+              compileSdk 34
+              defaultConfig {
+                  applicationId "com.cfdata"
+                  minSdk 21
+                  targetSdk 34
+                  versionCode 1
+                  versionName "1.0"
+              }
+              buildTypes {
+                  release {
+                      minifyEnabled false
+                  }
+                  debug {
+                      debuggable true
+                  }
+              }
+              compileOptions {
+                  sourceCompatibility JavaVersion.VERSION_17
+                  targetCompatibility JavaVersion.VERSION_17
+              }
+          }
+          dependencies {
+              implementation 'androidx.appcompat:appcompat:1.6.1'
+              implementation(name: 'cfdata', ext: 'aar')
+          }
+          G
+
+      # 编译Debug APK
+      - name: Build Debug APK
+        run: ./gradlew :main:assembleDebug --stacktrace
+
+      # 上传APK
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: CFdata-test
+          path: main/build/outputs/apk/debug/*.apk
                   mavenCentral()
                   flatDir { dirs 'main/libs' }
               }
