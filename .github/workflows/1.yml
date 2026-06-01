@@ -76,10 +76,8 @@ jobs:
           curl -sL "https://raw.githubusercontent.com/gradle/gradle/v8.2.0/gradlew" -o gradlew
           curl -sL "https://raw.githubusercontent.com/gradle/gradle/v8.2.0/gradlew.bat" -o gradlew.bat
           chmod +x gradlew
-          ls -la gradle/wrapper/
-          file gradle/wrapper/gradle-wrapper.jar
 
-      # 创建Gradle构建文件（修复仓库冲突）
+      # 创建Gradle构建文件 + gradle.properties（启用AndroidX）
       - name: Setup Gradle Build Files
         run: |
           # 项目级 build.gradle
@@ -89,7 +87,7 @@ jobs:
           }
           G
 
-          # settings.gradle - 允许项目级仓库，避免冲突
+          # settings.gradle
           cat > settings.gradle << 'G'
           pluginManagement {
               repositories {
@@ -110,7 +108,14 @@ jobs:
           include ':main'
           G
 
-          # main/build.gradle - 不在项目级重复定义flatDir
+          # gradle.properties - 启用AndroidX 🔧 新增
+          cat > gradle.properties << 'P'
+          android.useAndroidX=true
+          android.enableJetifier=true
+          org.gradle.jvmargs=-Xmx2048m
+          P
+
+          # main/build.gradle
           cat > main/build.gradle << 'G'
           plugins {
               id 'com.android.application'
