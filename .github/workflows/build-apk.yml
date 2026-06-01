@@ -246,7 +246,7 @@ jobs:
           '    }' \
           '}' \
           > build.gradle
-
+          
     - name: Generate main/build.gradle
       shell: bash
       run: |
@@ -278,8 +278,11 @@ jobs:
           '}' \
           'dependencies {' \
           "    implementation files('libs/cfdata.aar')" \
+          "    implementation 'com.google.android.material:material:1.11.0'" \
           '}' \
           > main/build.gradle
+
+
 
     - name: Clean and Build
       run: |
