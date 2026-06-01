@@ -51,6 +51,12 @@ jobs:
         
         echo "plugins { id 'com.android.application' version '8.2.2' apply false }" > build.gradle
         
+        cat > gradle.properties << 'PROPS'
+        android.useAndroidX=true
+        android.enableJetifier=true
+        org.gradle.jvmargs=-Xmx2048m
+        PROPS
+        
         cat > main/build.gradle << 'GRADLE'
         plugins { id 'com.android.application' }
         android {
