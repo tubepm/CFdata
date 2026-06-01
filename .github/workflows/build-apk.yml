@@ -13,6 +13,13 @@ jobs:
     - name: Checkout Code
       uses: actions/checkout@v4
 
+    - name: Reorganize Project Structure
+      run: |
+        mkdir -p main/src/main
+        mv main/AndroidManifest.xml main/src/main/ 2>/dev/null || true
+        mv main/java main/src/main/ 2>/dev/null || true
+        mv main/res main/src/main/ 2>/dev/null || true
+
     - name: Set up Go
       uses: actions/setup-go@v5
       with:
