@@ -1,4 +1,4 @@
-name: Build CFdata APK (Test)
+name: Build CFdata APK
 
 on:
   push:
@@ -22,6 +22,7 @@ jobs:
         with:
           api-level: 34
           build-tools: 34.0.0
+          ndk: 25.2.9519653
 
       # 尝试编译Go AAR（容错）
       - name: Try Build Go AAR
@@ -33,7 +34,15 @@ jobs:
           go install golang.org/x/mobile/cmd/gomobile@latest
           go install golang.org/x/mobile/cmd/gobind@latest
           export PATH=$HOME/go/bin:$PATH
-          export ANDROID_NDK_HOME=$ANDROID_SDK_ROOT/ndk/25.2.9519653
+
+          # 查找NDK路径
+          NDK_PATH=$(find $ANDROID_SDK_ROOT/ndk -name "meta" -type d 2>/dev/null | head -1 | sed 's|/meta||')
+          if [ -z "$NDK_PATH" ]; then
+            NDK_PATH=$ANDROID_SDK_ROOT/ndk/25.2.9519653
+          fi
+          echo "NDK_PATH=$NDK_PATH"
+          export ANDROID_NDK_HOME=$NDK_PATH
+
           gomobile init || true
           mkdir -p main/libs
           gomobile bind -v -o main/libs/cfdata.aar -target=android ./ || echo "Gomobile failed, will use stub"
@@ -49,43 +58,38 @@ jobs:
             cd /tmp/aar-stub && zip -r $GITHUB_WORKSPACE/main/libs/cfdata.aar AndroidManifest.xml jni/
           fi
 
-      # 创建完整的Gradle wrapper（包含gradle-wrapper.jar）
+      # 创建完整的Gradle wrapper
       - name: Setup Gradle Wrapper
         run: |
           mkdir -p gradle/wrapper
-
-          # 下载gradle-wrapper.jar（关键修复）
           curl -sL "https://raw.githubusercontent.com/gradle/gradle/v8.2.0/gradle/wrapper/gradle-wrapper.jar" -o gradle/wrapper/gradle-wrapper.jar
 
-          # 创建gradle-wrapper.properties
           cat > gradle/wrapper/gradle-wrapper.properties << 'P'
           distributionBase=GRADLE_USER_HOME
           distributionPath=wrapper/dists
           distributionUrl=https\://services.gradle.org/distributions/gradle-8.2-bin.zip
           networkTimeout=10000
-          validateDistributionUrl=true
           zipStoreBase=GRADLE_USER_HOME
           zipStorePath=wrapper/dists
           P
 
-          # 下载gradlew脚本
           curl -sL "https://raw.githubusercontent.com/gradle/gradle/v8.2.0/gradlew" -o gradlew
           curl -sL "https://raw.githubusercontent.com/gradle/gradle/v8.2.0/gradlew.bat" -o gradlew.bat
           chmod +x gradlew
-
-          # 验证wrapper完整性
           ls -la gradle/wrapper/
           file gradle/wrapper/gradle-wrapper.jar
 
-      # 创建Gradle构建文件
+      # 创建Gradle构建文件（修复仓库冲突）
       - name: Setup Gradle Build Files
         run: |
+          # 项目级 build.gradle
           cat > build.gradle << 'G'
           plugins {
               id 'com.android.application' version '8.2.0' apply false
           }
           G
 
+          # settings.gradle - 允许项目级仓库，避免冲突
           cat > settings.gradle << 'G'
           pluginManagement {
               repositories {
@@ -95,7 +99,7 @@ jobs:
               }
           }
           dependencyResolutionManagement {
-              repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+              repositoriesMode.set(RepositoriesMode.PREFER_SETTINGS)
               repositories {
                   google()
                   mavenCentral()
@@ -106,6 +110,7 @@ jobs:
           include ':main'
           G
 
+          # main/build.gradle - 不在项目级重复定义flatDir
           cat > main/build.gradle << 'G'
           plugins {
               id 'com.android.application'
@@ -132,9 +137,6 @@ jobs:
                   sourceCompatibility JavaVersion.VERSION_17
                   targetCompatibility JavaVersion.VERSION_17
               }
-          }
-          repositories {
-              flatDir { dirs 'libs' }
           }
           dependencies {
               implementation 'androidx.appcompat:appcompat:1.6.1'
