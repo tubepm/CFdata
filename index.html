@@ -323,6 +323,7 @@
         
         <div class="status-bar" id="status">正在连接服务器...</div>
         
+        <!-- 统一任务页面 -->
         <div class="controls">
             <div class="form-group">
                 <label>IP类型</label>
@@ -338,9 +339,9 @@
             </div>
 
             <div class="form-group">
-                <label>端口与自定义协议</label>
-                <select id="testPort" onchange="checkCustomPort()">
-                    <optgroup label="HTTPS (默认固定的安全端口)">
+                <label>端口</label>
+                <select id="testPort">
+                    <optgroup label="HTTPS (默认)">
                         <option value="443" selected>443</option>
                         <option value="2053">2053</option>
                         <option value="2083">2083</option>
@@ -348,10 +349,7 @@
                         <option value="2096">2096</option>
                         <option value="8443">8443</option>
                     </optgroup>
-                    <optgroup label="HTTPS (自定义输入任意端口)">
-                        <option value="custom_https">✨ 框内输入任意 HTTPS 端口...</option>
-                    </optgroup>
-                    <optgroup label="HTTP (默认固定的明文端口)">
+                    <optgroup label="HTTP">
                         <option value="80">80</option>
                         <option value="8080">8080</option>
                         <option value="8880">8880</option>
@@ -360,11 +358,7 @@
                         <option value="2086">2086</option>
                         <option value="2095">2095</option>
                     </optgroup>
-                    <optgroup label="HTTP (自定义输入任意端口)">
-                        <option value="custom_http">✨ 框内输入任意 HTTP 端口...</option>
-                    </optgroup>
                 </select>
-                <input type="number" id="customPortInput" placeholder="请输入任意端口号 (例如: 8888)" style="display: none; margin-top: 8px;">
             </div>
 
             <div class="form-group">
@@ -390,7 +384,9 @@
             <div class="tab" onclick="switchTab('test')">详细测试</div>
         </div>
 
+        <!-- 扫描结果页面 -->
         <div id="scan" class="tab-content active">
+            <!-- 数据中心汇总 -->
             <div class="section-box" id="dcSection" style="display:none;">
                 <h3>
                     数据中心汇总 
@@ -417,6 +413,7 @@
                 </div>
             </div>
             
+            <!-- 实时扫描结果 -->
             <div class="section-box">
                 <h3>实时扫描结果 <span class="badge" id="scanCount">0</span></h3>
                 <div class="scroll-table-lg">
@@ -436,6 +433,7 @@
             </div>
         </div>
 
+        <!-- 详细测试结果页面 -->
         <div id="test" class="tab-content">
             <div class="section-box">
                 <h3>
@@ -480,37 +478,6 @@
         let scanData = [];
         let testData = [];
 
-        // 动态控制自定义输入框的显示与隐藏
-        function checkCustomPort() {
-            const select = document.getElementById('testPort');
-            const customInput = document.getElementById('customPortInput');
-            if (select.value === 'custom_https' || select.value === 'custom_http') {
-                customInput.style.display = 'block';
-                customInput.placeholder = select.value === 'custom_https' ? "请输入自定义 HTTPS 端口" : "请输入自定义 HTTP 端口";
-                customInput.focus();
-            } else {
-                customInput.style.display = 'none';
-            }
-        }
-
-        // 统一获取最终生效端口数字的辅助函数
-        function getSelectedPort() {
-            const select = document.getElementById('testPort');
-            if (select.value === 'custom_https' || select.value === 'custom_http') {
-                const val = parseInt(document.getElementById('customPortInput').value);
-                return isNaN(val) ? (select.value === 'custom_https' ? 443 : 80) : val;
-            }
-            return parseInt(select.value);
-        }
-
-        // 统一判断当前的协议类型 (http / https)
-        function getSelectedProtocol(port) {
-            const select = document.getElementById('testPort').value;
-            if (select === 'custom_https') return 'https';
-            if (select === 'custom_http') return 'http';
-            return [443, 2053, 2083, 2087, 2096, 8443].includes(port) ? 'https' : 'http';
-        }
-
         function connect() {
             ws = new WebSocket("ws://" + window.location.host + "/ws");
             
@@ -550,9 +517,11 @@
                     updateProgress(msg.data.current, msg.data.total, "测试中");
                     break;
                 case 'test_result':
+                    // 实时显示结果，但不存储用于排序（等待后端完整结果）
                     addTestResult(msg.data);
                     break;
                 case 'test_complete':
+                    // 接收后端排序好的完整数据
                     testData = msg.data;
                     renderAllTestResults();
                     onTestComplete();
@@ -587,7 +556,7 @@
         function startUnifiedTask() {
             const ipType = parseInt(document.getElementById('ipType').value);
             const threads = parseInt(document.getElementById('scanThreads').value) || 100;
-            const port = getSelectedPort(); // 升级：动态获取端口号
+            const port = parseInt(document.getElementById('testPort').value);
             const delay = parseInt(document.getElementById('testDelay').value) || 500;
             const speedUrlInput = document.getElementById('speedUrl');
             const speedUrl = speedUrlInput.value.trim();
@@ -686,7 +655,7 @@
         }
 
         function selectDC(dc) {
-            const port = getSelectedPort(); // 升级：动态获取端口号
+            const port = parseInt(document.getElementById('testPort').value);
             const delay = parseInt(document.getElementById('testDelay').value);
             
             document.querySelector('#testTable tbody').innerHTML = '';
@@ -740,9 +709,9 @@
                 btn.style.color = "#ffffff";
             }
             
-            const port = getSelectedPort(); // 升级：获取端口号
+            const port = parseInt(document.getElementById('testPort').value);
             const speedUrlInput = document.getElementById('speedUrl');
-            let speedUrl = speedUrlInput ? speedUrlInput.value.trim() : "";
+            const speedUrl = speedUrlInput ? speedUrlInput.value.trim() : "";
 
             if (speedUrl) {
                 try {
@@ -753,16 +722,9 @@
                 } catch (e) {}
             }
 
-            // 核心功能升级：提取并纠正测速链接的协议前缀
-            const customProtocol = getSelectedProtocol(port);
-            let finalSpeedUrl = speedUrl;
-            if (speedUrl && !speedUrl.startsWith('http://') && !speedUrl.startsWith('https://')) {
-                finalSpeedUrl = customProtocol + "://" + speedUrl;
-            }
-
             ws.send(JSON.stringify({
                 type: 'start_speed_test',
-                data: { ip, port, speedUrl: finalSpeedUrl }
+                data: { ip, port, speedUrl }
             }));
         }
 
@@ -842,12 +804,15 @@
         function addTestResult(res) {
             testResultsCount++;
             updateBadge('testCount', testResultsCount);
+            // 实时渲染一行
             renderTestRow(res);
         }
 
+        // 新增：渲染所有测试结果（用于后端排序后的完整刷新）
         function renderAllTestResults() {
             const tbody = document.querySelector('#testTable tbody');
             tbody.innerHTML = ''; 
+            // 这里的 testData 已经是后端排好序的了
             testData.forEach(res => {
                 renderTestRow(res);
             });
@@ -905,4 +870,50 @@
 
         function updateStatus(text, connected) {
             const el = document.getElementById('status');
-            el.textContent = text
+            el.textContent = text;
+            if(connected) {
+                el.style.borderLeftColor = 'var(--success-color)';
+                el.style.background = '#ecfdf5';
+                el.style.color = '#065f46';
+            } else {
+                el.style.borderLeftColor = '#ef4444';
+                el.style.background = '#fef2f2';
+                el.style.color = '#991b1b';
+            }
+        }
+
+        function log(text) {
+            const box = document.getElementById('logBox');
+            const time = new Date().toLocaleTimeString();
+            box.innerHTML += `<div><span style="opacity:0.6">[${time}]</span> ${text}</div>`;
+            box.scrollTop = box.scrollHeight;
+        }
+
+        function switchTab(tabId) {
+            document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+            document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+            
+            const tabs = document.querySelectorAll('.tab');
+            if(tabId === 'scan') {
+                tabs[0].classList.add('active');
+            } else {
+                tabs[1].classList.add('active');
+            }
+            
+            document.getElementById(tabId).classList.add('active');
+        }
+
+        // 初始化
+        (function init() {
+            try {
+                const saved = localStorage.getItem('cfdata_speed_url');
+                if (saved) {
+                    const input = document.getElementById('speedUrl');
+                    if (input) input.value = saved;
+                }
+            } catch (e) {}
+            connect();
+        })();
+    </script>
+</body>
+</html>
