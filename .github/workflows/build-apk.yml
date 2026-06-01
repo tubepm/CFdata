@@ -27,86 +27,274 @@ jobs:
         rm -rf main/src/main/kotlin 2>/dev/null || true
         mkdir -p main/src/main/java/com/cfdata
         
-        tee main/src/main/java/com/cfdata/MainActivity.java << 'JAVAEOF'
-        package com.cfdata;
-        
-        import android.app.Activity;
-        import android.app.AlertDialog;
-        import android.content.Context;
-        import android.content.SharedPreferences;
-        import android.os.Bundle;
-        import android.os.Handler;
-        import android.os.Looper;
-        import android.webkit.JavascriptInterface;
-        import android.webkit.WebChromeClient;
-        import android.webkit.WebSettings;
-        import android.webkit.WebView;
-        import android.webkit.WebViewClient;
-        import com.cfdata.cfdata.Cfdata;
-        
-        public class MainActivity extends Activity {
-            private static final int SERVER_PORT = 0x3417;
-            private static final String PREFS_NAME = "cfdata_prefs";
-            private static final String PREF_SPEED_URL = "speed_test_url";
-            private static final String DEFAULT_SPEED_URL = "speed.cloudflare.com/__down?bytes=100000000";
-        
-            private WebView webView;
-            private SharedPreferences prefs;
-        
+        cat > main/src/main/java/com/cfdata/MainActivity.java << 'EOF'
+package com.cfdata;
+
+import android.app.Activity;
+import android.app.AlertDialog;
+import android.content.Context;
+import android.content.SharedPreferences;
+import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
+import android.webkit.JavascriptInterface;
+import android.webkit.WebChromeClient;
+import android.webkit.WebSettings;
+import android.webkit.WebView;
+import android.webkit.WebViewClient;
+import com.cfdata.cfdata.Cfdata;
+
+public class MainActivity extends Activity {
+    private static final int SERVER_PORT = 0x3417;
+    private static final String PREFS_NAME = "cfdata_prefs";
+    private static final String PREF_SPEED_URL = "speed_test_url";
+    private static final String DEFAULT_SPEED_URL = "speed.cloudflare.com/__down?bytes=100000000";
+
+    private WebView webView;
+    private SharedPreferences prefs;
+
+    @Override
+    protected void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        setContentView(R.layout.activity_main);
+
+        prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
+        String savedUrl = prefs.getString(PREF_SPEED_URL, DEFAULT_SPEED_URL);
+
+        Thread serverThread = new Thread("cfdata-server") {
             @Override
-            protected void onCreate(Bundle savedInstanceState) {
-                super.onCreate(savedInstanceState);
-                setContentView(R.layout.activity_main);
-        
-                prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
-                String savedUrl = prefs.getString(PREF_SPEED_URL, DEFAULT_SPEED_URL);
-        
-                Thread serverThread = new Thread("cfdata-server") {
-                    @Override
-                    public void run() {
-                        try {
-                            String dataDir = getCacheDir().getAbsolutePath();
-                            Cfdata.setDataDir(dataDir);
-                            Cfdata.startServer(SERVER_PORT, savedUrl);
-                        } catch (Exception e) {
-                            e.printStackTrace();
-                        }
-                    }
-                };
-                serverThread.start();
-        
-                webView = findViewById(R.id.webView);
-                configureWebView(webView);
-                waitForServerAndLoad();
-            }
-        
-            private void configureWebView(WebView wv) {
-                WebSettings settings = wv.getSettings();
-                settings.setJavaScriptEnabled(true);
-                settings.setDomStorageEnabled(true);
-                settings.setLoadWithOverviewMode(true);
-                settings.setUseWideViewPort(true);
-        
-                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O_MR1) {
-                    settings.setSafeBrowsingEnabled(false);
-                }
-                settings.setMixedContentMode(WebSettings.MIXED_CONTENT_ALWAYS_ALLOW);
-        
-                WebView.setWebContentsDebuggingEnabled(true);
-                wv.addJavascriptInterface(new WebAppInterface(prefs), "Android");
-                wv.setWebViewClient(new WebViewClient());
-                wv.setWebChromeClient(new WebChromeClient());
-            }
-        
-            private boolean isServerReady() {
-                java.net.HttpURLConnection conn = null;
+            public void run() {
                 try {
-                    java.net.URL url = new java.net.URL("http://127.0.0.1:13335/");
-                    conn = (java.net.HttpURLConnection) url.openConnection();
-                    conn.setConnectTimeout(1000);
-                    conn.setReadTimeout(1000);
-                    conn.setRequestMethod("GET");
-                    conn.getInputStream().close();
+                    String dataDir = getCacheDir().getAbsolutePath();
+                    Cfdata.setDataDir(dataDir);
+                    Cfdata.startServer(SERVER_PORT, savedUrl);
+                } catch (Exception e) {
+                    e.printStackTrace();
+                }
+            }
+        };
+        serverThread.start();
+
+        webView = findViewById(R.id.webView);
+        configureWebView(webView);
+        waitForServerAndLoad();
+    }
+
+    private void configureWebView(WebView wv) {
+        WebSettings settings = wv.getSettings();
+        settings.setJavaScriptEnabled(true);
+        settings.setDomStorageEnabled(true);
+        settings.setLoadWithOverviewMode(true);
+        settings.setUseWideViewPort(true);
+
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O_MR1) {
+            settings.setSafeBrowsingEnabled(false);
+        }
+        settings.setMixedContentMode(WebSettings.MIXED_CONTENT_ALWAYS_ALLOW);
+
+        WebView.setWebContentsDebuggingEnabled(true);
+        wv.addJavascriptInterface(new WebAppInterface(prefs), "Android");
+        wv.setWebViewClient(new WebViewClient());
+        wv.setWebChromeClient(new WebChromeClient());
+    }
+
+    private boolean isServerReady() {
+        java.net.HttpURLConnection conn = null;
+        try {
+            java.net.URL url = new java.net.URL("http://127.0.0.1:13335/");
+            conn = (java.net.HttpURLConnection) url.openConnection();
+            conn.setConnectTimeout(1000);
+            conn.setReadTimeout(1000);
+            conn.setRequestMethod("GET");
+            conn.getInputStream().close();
+            return true;
+        } catch (Exception e) {
+            return false;
+        } finally {
+            if (conn != null) conn.disconnect();
+        }
+    }
+
+    private void waitForServerAndLoad() {
+        Thread loader = new Thread("cfdata-loader") {
+            @Override
+            public void run() {
+                for (int i = 0; i < 30; i++) {
+                    if (isServerReady()) break;
+                    try {
+                        Thread.sleep(500);
+                    } catch (InterruptedException e) {
+                        Thread.currentThread().interrupt();
+                        return;
+                    }
+                }
+                new Handler(Looper.getMainLooper()).post(() -> {
+                    webView.loadUrl("http://127.0.0.1:13335/");
+                });
+            }
+        };
+        loader.start();
+    }
+
+    @Override
+    public void onBackPressed() {
+        if (webView != null && webView.canGoBack()) {
+            webView.goBack();
+        } else {
+            new AlertDialog.Builder(this)
+                .setMessage("确定要退出应用吗？")
+                .setPositiveButton("取消", null)
+                .setNegativeButton("退出", (dialog, which) -> {
+                    finishAffinity();
+                    android.os.Process.killProcess(android.os.Process.myPid());
+                })
+                .show();
+        }
+    }
+
+    private static class WebAppInterface {
+        private SharedPreferences prefs;
+
+        WebAppInterface(SharedPreferences prefs) {
+            this.prefs = prefs;
+        }
+
+        @JavascriptInterface
+        public void saveSpeedUrl(String url) {
+            prefs.edit().putString("speed_test_url", url).apply();
+        }
+    }
+}
+EOF
+
+        echo "=== Generated files ==="
+        ls -la main/src/main/java/com/cfdata/
+        echo ""
+        echo "=== Check for Kotlin files ==="
+        find main/src -name "*.kt" -o -name "*.kts" || echo "No Kotlin files found"
+        echo ""
+        echo "=== MainActivity.java first 10 lines ==="
+        head -10 main/src/main/java/com/cfdata/MainActivity.java
+        echo ""
+        echo "=== Check isServerReady method ==="
+        grep -n "conn.setRequestMethod" main/src/main/java/com/cfdata/MainActivity.java
+
+    - name: Set up Go
+      uses: actions/setup-go@v5
+      with:
+        go-version: '1.25.0'
+
+    - name: Set up JDK 17
+      uses: actions/setup-java@v4
+      with:
+        java-version: '17'
+        distribution: 'temurin'
+
+    - name: Install Android SDK & NDK
+      run: |
+        echo "y" | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --install "ndk;26.1.10909125" "build-tools;34.0.0" "platforms;android-34"
+        echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/26.1.10909125" >> $GITHUB_ENV
+
+    - name: Install and Init Go Mobile
+      run: |
+        go install golang.org/x/mobile/cmd/gomobile@latest
+        gomobile init
+        mkdir -p main/libs
+        gomobile bind -target=android/arm64 -androidapi 21 -javapkg com.cfdata -o main/libs/cfdata.aar .
+
+    - name: Verify AAR
+      run: |
+        ls -la main/libs/
+        echo "=== AndroidManifest.xml ==="
+        unzip -p main/libs/cfdata.aar AndroidManifest.xml
+        echo ""
+        echo "=== All classes in AAR ==="
+        unzip -p main/libs/cfdata.aar classes.jar > /tmp/classes.jar
+        jar tf /tmp/classes.jar | grep "\.class" | sort
+
+    - name: Generate Gradle Files
+      shell: bash
+      run: |
+        printf '%s\n' \
+          'android.useAndroidX=true' \
+          'android.enableJetifier=true' \
+          'org.gradle.jvmargs=-Xmx2048m -Dfile.encoding=UTF-8' \
+          'org.gradle.parallel=true' \
+          > gradle.properties
+
+        printf '%s\n' \
+          'pluginManagement {' \
+          '    repositories {' \
+          '        google()' \
+          '        mavenCentral()' \
+          '        gradlePluginPortal()' \
+          '    }' \
+          '}' \
+          "include ':main'" \
+          > settings.gradle
+
+        printf '%s\n' \
+          'plugins {' \
+          "    id 'com.android.application' version '8.2.2' apply false" \
+          '}' \
+          'allprojects {' \
+          '    repositories {' \
+          '        google()' \
+          '        mavenCentral()' \
+          '    }' \
+          '}' \
+          > build.gradle
+
+    - name: Generate main/build.gradle
+      shell: bash
+      run: |
+        printf '%s\n' \
+          'plugins {' \
+          "    id 'com.android.application'" \
+          '}' \
+          'android {' \
+          "    namespace 'com.cfdata'" \
+          '    compileSdk 34' \
+          '    defaultConfig {' \
+          "        applicationId 'com.cfdata'" \
+          '        minSdk 24' \
+          '        targetSdk 34' \
+          '        versionCode 1' \
+          "        versionName '1.0'" \
+          '    }' \
+          '    buildTypes {' \
+          '        release { minifyEnabled false }' \
+          '    }' \
+          '    compileOptions {' \
+          '        sourceCompatibility JavaVersion.VERSION_17' \
+          '        targetCompatibility JavaVersion.VERSION_17' \
+          '    }' \
+          '    lint {' \
+          '        abortOnError false' \
+          '        checkReleaseBuilds false' \
+          '    }' \
+          '}' \
+          'dependencies {' \
+          "    implementation files('libs/cfdata.aar')" \
+          "    implementation 'com.google.android.material:material:1.11.0'" \
+          '}' \
+          > main/build.gradle
+
+    - name: Clean and Build
+      run: |
+        gradle wrapper --gradle-version 8.2 --distribution-type bin
+        ./gradlew clean
+        rm -rf main/build
+
+    - name: Build APK with Gradle
+      run: |
+        ./gradlew :main:assembleDebug --stacktrace -x lint -x test --warning-mode none --no-daemon
+
+    - name: Upload APK
+      uses: actions/upload-artifact@v4
+      with:
+        name: cloudflare-ip-data-apk
+        path: main/build/outputs/apk/debug/*.apk
                     return true;
                 } catch (Exception e) {
                     return false;
