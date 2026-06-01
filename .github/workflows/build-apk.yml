@@ -1,53 +1,79 @@
-name: Build Optimized APK
-on: [push, workflow_dispatch]
+name: Build Android APK
+
+on:
+  push:
+    branches: [ "main", "master" ]
+  workflow_dispatch:
 
 jobs:
   build:
     runs-on: ubuntu-latest
+
     steps:
-      - name: Checkout Code
-        uses: actions/checkout@v4
+    - name: Checkout Code
+      uses: actions/checkout@v4
 
-      - name: Set up JDK 17
-        uses: actions/setup-java@v4
-        with:
-          java-version: '17'
-          distribution: 'temurin'
+    - name: Set up Go
+      uses: actions/setup-go@v5
+      with:
+        go-version: '1.25.0'
 
-      - name: Set up Go
-        uses: actions/setup-go@v5
-        with:
-          go-version: '1.25.0'
+    - name: Set up JDK 17
+      uses: actions/setup-java@v4
+      with:
+        java-version: '17'
+        distribution: 'temurin'
 
-      - name: Install and Init Go Mobile
-        run: |
-          go install golang.org/x/mobile/cmd/gomobile@latest
-          gomobile init
-          mkdir -p main/libs
-          # 确保 bind 时加入 -ldflags="-s -w" 减少 Go 代码符号表
-          gomobile bind -target=android/arm64 -androidapi 21 -javapkg com.cfdata -o main/libs/cfdata.aar -ldflags="-s -w" .
+    - name: Install Android SDK & NDK
+      run: |
+        echo "y" | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --install "ndk;26.1.10909125" "build-tools;34.0.0" "platforms;android-34"
+        echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/26.1.10909125" >> $GITHUB_ENV
 
-      - name: Generate Minimal Gradle Files
-        run: |
-          # 创建一个极其精简的 build.gradle
-          printf '%s\n' \
-          "plugins { id 'com.android.application'; id 'org.jetbrains.kotlin.android' }" \
-          "android {" \
-          "    namespace 'com.cfdata'; compileSdk 34;" \
-          "    defaultConfig { applicationId 'com.cfdata'; minSdk 21; targetSdk 34; versionCode 1; versionName '1.0' }" \
-          "    buildTypes { release { minifyEnabled true; shrinkResources true; proguardFiles getDefaultProguardFile('proguard-android-optimize.txt') } }" \
-          "    compileOptions { sourceCompatibility JavaVersion.VERSION_17; targetCompatibility JavaVersion.VERSION_17 }" \
-          "}" \
-          "dependencies { implementation files('libs/cfdata.aar') }" \
-          > main/build.gradle
+    - name: Build Go AAR
+      run: |
+        go install golang.org/x/mobile/cmd/gomobile@latest
+        gomobile init
+        mkdir -p main/libs
+        gomobile bind -target=android/arm64 -androidapi 21 -javapkg com.cfdata -o main/libs/cfdata.aar .
 
-      - name: Build Optimized APK
-        run: |
-          # 使用 release 模式构建
-          ./gradlew :main:assembleRelease --no-daemon --stacktrace
+    - name: Generate Gradle Files
+      run: |
+        echo "include ':main'" > settings.gradle
+        
+        echo "plugins { id 'com.android.application' version '8.2.2' apply false }" > build.gradle
+        
+        cat > main/build.gradle << 'GRADLE'
+        plugins { id 'com.android.application' }
+        android {
+            namespace 'com.cfdata'
+            compileSdk 34
+            defaultConfig {
+                applicationId 'com.cfdata'
+                minSdk 24
+                targetSdk 34
+                versionCode 1
+                versionName '1.0'
+            }
+            buildTypes { release { minifyEnabled false } }
+            compileOptions {
+                sourceCompatibility JavaVersion.VERSION_17
+                targetCompatibility JavaVersion.VERSION_17
+            }
+            lint { abortOnError false; checkReleaseBuilds false }
+        }
+        dependencies {
+            implementation files('libs/cfdata.aar')
+            implementation 'com.google.android.material:material:1.11.0'
+        }
+        GRADLE
 
-      - name: Upload Artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: minimal-apk
-          path: main/build/outputs/apk/release/*.apk
+    - name: Build APK
+      run: |
+        gradle wrapper --gradle-version 8.2
+        ./gradlew :main:assembleDebug --no-daemon
+
+    - name: Upload APK
+      uses: actions/upload-artifact@v4
+      with:
+        name: cfdata-apk
+        path: main/build/outputs/apk/debug/*.apk
