@@ -24,7 +24,6 @@ jobs:
           build-tools: 34.0.0
           ndk: 25.2.9519653
 
-      # 尝试编译Go AAR（容错）
       - name: Try Build Go AAR
         continue-on-error: true
         run: |
@@ -34,25 +33,19 @@ jobs:
           go install golang.org/x/mobile/cmd/gomobile@latest
           go install golang.org/x/mobile/cmd/gobind@latest
           export PATH=$HOME/go/bin:$PATH
-          
-          # 查找NDK路径
           NDK_PATH=$(find $ANDROID_SDK_ROOT/ndk -name "meta" -type d 2>/dev/null | head -1 | sed 's|/meta||')
           if [ -z "$NDK_PATH" ]; then
             NDK_PATH=$ANDROID_SDK_ROOT/ndk/25.2.9519653
           fi
           echo "NDK_PATH=$NDK_PATH"
           export ANDROID_NDK_HOME=$NDK_PATH
-          
           gomobile init || true
           mkdir -p $GITHUB_WORKSPACE/main/libs
           gomobile bind -v -o $GITHUB_WORKSPACE/main/libs/cfdata.aar -target=android ./ || echo "Gomobile failed, will use stub"
 
-      # 如果gomobile失败，创建stub AAR
       - name: Create Stub AAR if needed
         run: |
-          # 确保目录存在
           mkdir -p $GITHUB_WORKSPACE/main/libs
-          
           if [ ! -f $GITHUB_WORKSPACE/main/libs/cfdata.aar ]; then
             echo "Creating stub AAR..."
             mkdir -p /tmp/aar-stub/jni/arm64-v8a
@@ -60,79 +53,111 @@ jobs:
             echo '<?xml version="1.0" encoding="utf-8"?><manifest package="com.cfdata.cfdata" />' > /tmp/aar-stub/AndroidManifest.xml
             cd /tmp/aar-stub && zip -r $GITHUB_WORKSPACE/main/libs/cfdata.aar AndroidManifest.xml jni/
           fi
-          
-          # 验证AAR存在
           ls -la $GITHUB_WORKSPACE/main/libs/
           file $GITHUB_WORKSPACE/main/libs/cfdata.aar
 
-      # 创建完整的Gradle wrapper
       - name: Setup Gradle Wrapper
         run: |
           mkdir -p gradle/wrapper
           curl -sL "https://raw.githubusercontent.com/gradle/gradle/v8.2.0/gradle/wrapper/gradle-wrapper.jar" -o gradle/wrapper/gradle-wrapper.jar
-          
-          cat > gradle/wrapper/gradle-wrapper.properties << 'P'
-          distributionBase=GRADLE_USER_HOME
-          distributionPath=wrapper/dists
-          distributionUrl=https\://services.gradle.org/distributions/gradle-8.2-bin.zip
-          networkTimeout=10000
-          zipStoreBase=GRADLE_USER_HOME
-          zipStorePath=wrapper/dists
-          P
-          
+          echo 'distributionBase=GRADLE_USER_HOME' > gradle/wrapper/gradle-wrapper.properties
+          echo 'distributionPath=wrapper/dists' >> gradle/wrapper/gradle-wrapper.properties
+          echo 'distributionUrl=https\://services.gradle.org/distributions/gradle-8.2-bin.zip' >> gradle/wrapper/gradle-wrapper.properties
+          echo 'networkTimeout=10000' >> gradle/wrapper/gradle-wrapper.properties
+          echo 'zipStoreBase=GRADLE_USER_HOME' >> gradle/wrapper/gradle-wrapper.properties
+          echo 'zipStorePath=wrapper/dists' >> gradle/wrapper/gradle-wrapper.properties
           curl -sL "https://raw.githubusercontent.com/gradle/gradle/v8.2.0/gradlew" -o gradlew
           curl -sL "https://raw.githubusercontent.com/gradle/gradle/v8.2.0/gradlew.bat" -o gradlew.bat
           chmod +x gradlew
 
-      # 创建Gradle构建文件
       - name: Setup Gradle Build Files
         run: |
-          # 项目级 build.gradle
-          cat > build.gradle << 'G'
-          plugins {
-              id 'com.android.application' version '8.2.0' apply false
-          }
-          G
+          # build.gradle
+          echo 'plugins {' > build.gradle
+          echo '    id "com.android.application" version "8.2.0" apply false' >> build.gradle
+          echo '}' >> build.gradle
 
-          # settings.gradle - flatDir指向main/libs
-          cat > settings.gradle << 'G'
-          pluginManagement {
-              repositories {
-                  google()
-                  mavenCentral()
-                  gradlePluginPortal()
-              }
-          }
-          dependencyResolutionManagement {
-              repositoriesMode.set(RepositoriesMode.PREFER_SETTINGS)
-              repositories {
-                  google()
-                  mavenCentral()
-                  flatDir { dirs 'main/libs' }
-              }
-          }
-          rootProject.name = "CFdata"
-          include ':main'
-          G
+          # settings.gradle - 用printf避免转义问题
+          printf '%s
+' 'pluginManagement {' > settings.gradle
+          printf '%s
+' '    repositories {' >> settings.gradle
+          printf '%s
+' '        google()' >> settings.gradle
+          printf '%s
+' '        mavenCentral()' >> settings.gradle
+          printf '%s
+' '        gradlePluginPortal()' >> settings.gradle
+          printf '%s
+' '    }' >> settings.gradle
+          printf '%s
+' '}' >> settings.gradle
+          printf '%s
+' 'dependencyResolutionManagement {' >> settings.gradle
+          printf '%s
+' '    repositoriesMode.set(RepositoriesMode.PREFER_SETTINGS)' >> settings.gradle
+          printf '%s
+' '    repositories {' >> settings.gradle
+          printf '%s
+' '        google()' >> settings.gradle
+          printf '%s
+' '        mavenCentral()' >> settings.gradle
+          printf '%s
+' '        flatDir { dirs "main/libs" }' >> settings.gradle
+          printf '%s
+' '    }' >> settings.gradle
+          printf '%s
+' '}' >> settings.gradle
+          printf '%s
+' 'rootProject.name = "CFdata"' >> settings.gradle
+          printf '%s
+' 'include ":main"' >> settings.gradle
 
           # gradle.properties
-          cat > gradle.properties << 'P'
-          android.useAndroidX=true
-          android.enableJetifier=true
-          org.gradle.jvmargs=-Xmx2048m
-          P
+          echo 'android.useAndroidX=true' > gradle.properties
+          echo 'android.enableJetifier=true' >> gradle.properties
+          echo 'org.gradle.jvmargs=-Xmx2048m' >> gradle.properties
 
           # main/build.gradle
-          cat > main/build.gradle << 'G'
-          plugins {
-              id 'com.android.application'
-          }
-          android {
-              namespace 'com.cfdata'
-              compileSdk 34
-              defaultConfig {
-                  applicationId "com.cfdata"
-                  minSdk 21
+          echo 'plugins {' > main/build.gradle
+          echo '    id "com.android.application"' >> main/build.gradle
+          echo '}' >> main/build.gradle
+          echo 'android {' >> main/build.gradle
+          echo '    namespace "com.cfdata"' >> main/build.gradle
+          echo '    compileSdk 34' >> main/build.gradle
+          echo '    defaultConfig {' >> main/build.gradle
+          echo '        applicationId "com.cfdata"' >> main/build.gradle
+          echo '        minSdk 21' >> main/build.gradle
+          echo '        targetSdk 34' >> main/build.gradle
+          echo '        versionCode 1' >> main/build.gradle
+          echo '        versionName "1.0"' >> main/build.gradle
+          echo '    }' >> main/build.gradle
+          echo '    buildTypes {' >> main/build.gradle
+          echo '        release {' >> main/build.gradle
+          echo '            minifyEnabled false' >> main/build.gradle
+          echo '        }' >> main/build.gradle
+          echo '        debug {' >> main/build.gradle
+          echo '            debuggable true' >> main/build.gradle
+          echo '        }' >> main/build.gradle
+          echo '    }' >> main/build.gradle
+          echo '    compileOptions {' >> main/build.gradle
+          echo '        sourceCompatibility JavaVersion.VERSION_17' >> main/build.gradle
+          echo '        targetCompatibility JavaVersion.VERSION_17' >> main/build.gradle
+          echo '    }' >> main/build.gradle
+          echo '}' >> main/build.gradle
+          echo 'dependencies {' >> main/build.gradle
+          echo '    implementation "androidx.appcompat:appcompat:1.6.1"' >> main/build.gradle
+          echo '    implementation(name: "cfdata", ext: "aar")' >> main/build.gradle
+          echo '}' >> main/build.gradle
+
+      - name: Build Debug APK
+        run: ./gradlew :main:assembleDebug --stacktrace
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: CFdata-test
+          path: main/build/outputs/apk/debug/*.apk
                   targetSdk 34
                   versionCode 1
                   versionName "1.0"
