@@ -38,26 +38,27 @@ jobs:
       # 修复cfdata.go的重复代码问题
       - name: Fix cfdata.go duplicate code
         run: |
-          echo "检查cfdata.go中的重复函数..."
-          grep -n "^func dataPath" cfdata.go || true
+          echo "检查cfdata.go文件..."
+          TOTAL_LINES=$(wc -l < cfdata.go)
+          echo "总行数: $TOTAL_LINES"
           
-          # 找到第二个 dataPath 函数的位置
-          SECOND_DATAPATH=$(grep -n "^func dataPath" cfdata.go | tail -1 | cut -d: -f1)
-          FIRST_DATAPATH=$(grep -n "^func dataPath" cfdata.go | head -1 | cut -d: -f1)
+          # 找到最后一个 "return randomIPs"（getRandomIPv6s函数的结束）
+          LAST_RETURN=$(grep -n "return randomIPs" cfdata.go | tail -1 | cut -d: -f1)
+          echo "最后一个 'return randomIPs' 在第 $LAST_RETURN 行"
           
-          echo "第一个 dataPath 在第 $FIRST_DATAPATH 行"
-          echo "第二个 dataPath 在第 $SECOND_DATAPATH 行"
-          
-          if [ "$SECOND_DATAPATH" != "$FIRST_DATAPATH" ]; then
-            echo "发现重复代码，删除第 $SECOND_DATAPATH 行之后的内容..."
-            head -n $((SECOND_DATAPATH - 1)) cfdata.go > cfdata.go.tmp
+          # 如果文件末尾有重复代码，删除从 LAST_RETURN 之后的内容
+          if [ "$LAST_RETURN" -lt "$TOTAL_LINES" ]; then
+            echo "发现重复代码！删除第 $((LAST_RETURN + 1)) 行到第 $TOTAL_LINES 行"
+            head -n $LAST_RETURN cfdata.go > cfdata.go.tmp
             mv cfdata.go.tmp cfdata.go
-            echo "修复完成"
+            echo "修复完成，新行数: $(wc -l < cfdata.go)"
+          else
+            echo "没有检测到重复代码"
           fi
           
           # 验证修复
-          echo "修复后的函数列表："
-          grep -n "^func " cfdata.go
+          echo "文件末尾10行:"
+          tail -10 cfdata.go
 
       # 编译Go AAR
       - name: Build Go AAR
