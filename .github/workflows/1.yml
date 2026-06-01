@@ -44,21 +44,26 @@ jobs:
           export ANDROID_NDK_HOME=$NDK_PATH
 
           gomobile init || true
-          mkdir -p main/libs
-          gomobile bind -v -o main/libs/cfdata.aar -target=android ./ || echo "Gomobile failed, will use stub"
+          mkdir -p $GITHUB_WORKSPACE/main/libs
+          gomobile bind -v -o $GITHUB_WORKSPACE/main/libs/cfdata.aar -target=android ./ || echo "Gomobile failed, will use stub"
 
       # 如果gomobile失败，创建stub AAR
       - name: Create Stub AAR if needed
         run: |
-          if [ ! -f main/libs/cfdata.aar ]; then
+          # 确保目录存在
+          mkdir -p $GITHUB_WORKSPACE/main/libs
+
+          if [ ! -f $GITHUB_WORKSPACE/main/libs/cfdata.aar ]; then
             echo "Creating stub AAR..."
             mkdir -p /tmp/aar-stub/jni/arm64-v8a
             echo 'PK' > /tmp/aar-stub/jni/arm64-v8a/libstub.so
             echo '<?xml version="1.0" encoding="utf-8"?><manifest package="com.cfdata.cfdata" />' > /tmp/aar-stub/AndroidManifest.xml
             cd /tmp/aar-stub && zip -r $GITHUB_WORKSPACE/main/libs/cfdata.aar AndroidManifest.xml jni/
           fi
+
           # 验证AAR存在
-          ls -la main/libs/
+          ls -la $GITHUB_WORKSPACE/main/libs/
+          file $GITHUB_WORKSPACE/main/libs/cfdata.aar
 
       # 创建完整的Gradle wrapper
       - name: Setup Gradle Wrapper
@@ -107,6 +112,60 @@ jobs:
               }
           }
           rootProject.name = "CFdata"
+          include ':main'
+          G
+
+          # gradle.properties
+          cat > gradle.properties << 'P'
+          android.useAndroidX=true
+          android.enableJetifier=true
+          org.gradle.jvmargs=-Xmx2048m
+          P
+
+          # main/build.gradle
+          cat > main/build.gradle << 'G'
+          plugins {
+              id 'com.android.application'
+          }
+          android {
+              namespace 'com.cfdata'
+              compileSdk 34
+              defaultConfig {
+                  applicationId "com.cfdata"
+                  minSdk 21
+                  targetSdk 34
+                  versionCode 1
+                  versionName "1.0"
+              }
+              buildTypes {
+                  release {
+                      minifyEnabled false
+                  }
+                  debug {
+                      debuggable true
+                  }
+              }
+              compileOptions {
+                  sourceCompatibility JavaVersion.VERSION_17
+                  targetCompatibility JavaVersion.VERSION_17
+              }
+          }
+          dependencies {
+              implementation 'androidx.appcompat:appcompat:1.6.1'
+              implementation(name: 'cfdata', ext: 'aar')
+          }
+          G
+
+      # 编译Debug APK
+      - name: Build Debug APK
+        run: ./gradlew :main:assembleDebug --stacktrace
+
+      # 上传APK
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: CFdata-test
+          path: main/build/outputs/apk/debug/*.apk
           include ':main'
           G
 
