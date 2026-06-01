@@ -38,7 +38,16 @@ jobs:
 
     - name: Generate Gradle Files
       run: |
-        echo "include ':main'" > settings.gradle
+        cat > settings.gradle << 'GRADLE'
+        pluginManagement {
+            repositories {
+                google()
+                mavenCentral()
+                gradlePluginPortal()
+            }
+        }
+        include ':main'
+        GRADLE
         
         echo "plugins { id 'com.android.application' version '8.2.2' apply false }" > build.gradle
         
@@ -69,7 +78,7 @@ jobs:
 
     - name: Build APK
       run: |
-        gradle wrapper --gradle-version 8.2
+        gradle wrapper --gradle-version 8.2 --distribution-type bin
         ./gradlew :main:assembleDebug --no-daemon
 
     - name: Upload APK
