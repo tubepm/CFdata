@@ -1,4 +1,4 @@
-name: Build CFdata APK (Gradle Only - Test)
+name: Build CFdata APK (Test)
 
 on:
   push:
@@ -23,44 +23,62 @@ jobs:
           api-level: 34
           build-tools: 34.0.0
 
-      # 尝试编译Go AAR，如果失败则跳过继续
+      # 尝试编译Go AAR（容错）
       - name: Try Build Go AAR
         continue-on-error: true
         run: |
-          # 设置Go
           curl -sL https://go.dev/dl/go1.22.0.linux-amd64.tar.gz | tar -C /tmp -xzf -
           export PATH=/tmp/go/bin:$PATH
           go version
-
-          # 安装gomobile
           go install golang.org/x/mobile/cmd/gomobile@latest
           go install golang.org/x/mobile/cmd/gobind@latest
           export PATH=$HOME/go/bin:$PATH
-
-          # 设置NDK路径
           export ANDROID_NDK_HOME=$ANDROID_SDK_ROOT/ndk/25.2.9519653
-
-          # 初始化gomobile
           gomobile init || true
-
-          # 尝试编译AAR
           mkdir -p main/libs
           gomobile bind -v -o main/libs/cfdata.aar -target=android ./ || echo "Gomobile failed, will use stub"
 
-      # 如果gomobile失败，创建stub AAR（仅用于测试Gradle编译）
+      # 如果gomobile失败，创建stub AAR
       - name: Create Stub AAR if needed
         run: |
           if [ ! -f main/libs/cfdata.aar ]; then
-            echo "Creating stub AAR for testing..."
-            mkdir -p /tmp/aar-stub
-            echo '<?xml version="1.0" encoding="utf-8"?><manifest package="com.cfdata.cfdata" />' > /tmp/aar-stub/AndroidManifest.xml
+            echo "Creating stub AAR..."
             mkdir -p /tmp/aar-stub/jni/arm64-v8a
-            echo "" > /tmp/aar-stub/jni/arm64-v8a/libstub.so
+            echo 'PK' > /tmp/aar-stub/jni/arm64-v8a/libstub.so
+            echo '<?xml version="1.0" encoding="utf-8"?><manifest package="com.cfdata.cfdata" />' > /tmp/aar-stub/AndroidManifest.xml
             cd /tmp/aar-stub && zip -r $GITHUB_WORKSPACE/main/libs/cfdata.aar AndroidManifest.xml jni/
           fi
 
-      # 创建Gradle文件
-      - name: Setup Gradle
+      # 创建完整的Gradle wrapper（包含gradle-wrapper.jar）
+      - name: Setup Gradle Wrapper
+        run: |
+          mkdir -p gradle/wrapper
+
+          # 下载gradle-wrapper.jar（关键修复）
+          curl -sL "https://raw.githubusercontent.com/gradle/gradle/v8.2.0/gradle/wrapper/gradle-wrapper.jar" -o gradle/wrapper/gradle-wrapper.jar
+
+          # 创建gradle-wrapper.properties
+          cat > gradle/wrapper/gradle-wrapper.properties << 'P'
+          distributionBase=GRADLE_USER_HOME
+          distributionPath=wrapper/dists
+          distributionUrl=https\://services.gradle.org/distributions/gradle-8.2-bin.zip
+          networkTimeout=10000
+          validateDistributionUrl=true
+          zipStoreBase=GRADLE_USER_HOME
+          zipStorePath=wrapper/dists
+          P
+
+          # 下载gradlew脚本
+          curl -sL "https://raw.githubusercontent.com/gradle/gradle/v8.2.0/gradlew" -o gradlew
+          curl -sL "https://raw.githubusercontent.com/gradle/gradle/v8.2.0/gradlew.bat" -o gradlew.bat
+          chmod +x gradlew
+
+          # 验证wrapper完整性
+          ls -la gradle/wrapper/
+          file gradle/wrapper/gradle-wrapper.jar
+
+      # 创建Gradle构建文件
+      - name: Setup Gradle Build Files
         run: |
           cat > build.gradle << 'G'
           plugins {
@@ -87,20 +105,6 @@ jobs:
           rootProject.name = "CFdata"
           include ':main'
           G
-
-          mkdir -p gradle/wrapper
-          cat > gradle/wrapper/gradle-wrapper.properties << 'P'
-          distributionBase=GRADLE_USER_HOME
-          distributionPath=wrapper/dists
-          distributionUrl=https\://services.gradle.org/distributions/gradle-8.2-bin.zip
-          networkTimeout=10000
-          zipStoreBase=GRADLE_USER_HOME
-          zipStorePath=wrapper/dists
-          P
-
-          curl -sL https://raw.githubusercontent.com/gradle/gradle/v8.2.0/gradlew -o gradlew
-          curl -sL https://raw.githubusercontent.com/gradle/gradle/v8.2.0/gradlew.bat -o gradlew.bat
-          chmod +x gradlew
 
           cat > main/build.gradle << 'G'
           plugins {
@@ -138,11 +142,11 @@ jobs:
           }
           G
 
-      # 编译APK
-      - name: Build APK
+      # 编译Debug APK
+      - name: Build Debug APK
         run: ./gradlew :main:assembleDebug --stacktrace
 
-      # 上传
+      # 上传APK
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
