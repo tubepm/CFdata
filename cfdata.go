@@ -178,7 +178,7 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request) {
 			if params.SpeedURL != "" {
 				SetSpeedTestURL(params.SpeedURL)
 			}
-			go runUnifiedTask(ws, params.IPType, params.Threads)
+			go runUnifiedTask(ws, params.IPType, params.Threads, params.Port)
 
 		case "start_test":
 			var params struct {
@@ -262,7 +262,7 @@ func initLocations() {
 	fmt.Printf("已加载 %d 个数据中心位置信息\n", len(locationMap))
 }
 
-func runUnifiedTask(ws *websocket.Conn, ipType int, scanMaxThreads int) {
+func runUnifiedTask(ws *websocket.Conn, ipType int, scanMaxThreads int, port int) {
 	taskMutex.Lock()
 	if isTaskRunning {
 		taskMutex.Unlock()
@@ -353,7 +353,8 @@ func runUnifiedTask(ws *websocket.Conn, ipType int, scanMaxThreads int) {
 
 			dialer := &net.Dialer{Timeout: 1 * time.Second}
 			start := time.Now()
-			conn, err := dialer.Dial("tcp", net.JoinHostPort(ip, "80"))
+			portStr := strconv.Itoa(port)
+			conn, err := dialer.Dial("tcp", net.JoinHostPort(ip, portStr))
 			if err != nil {
 				return
 			}
@@ -367,7 +368,11 @@ func runUnifiedTask(ws *websocket.Conn, ipType int, scanMaxThreads int) {
 				Timeout: 1 * time.Second,
 			}
 
-			requestURL := "http://" + net.JoinHostPort(ip, "80") + "/cdn-cgi/trace"
+			scheme := "http"
+			if port == 443 || port == 2053 || port == 2083 || port == 2087 || port == 2096 || port == 8443 {
+				scheme = "https"
+			}
+			requestURL := scheme + "://" + net.JoinHostPort(ip, portStr) + "/cdn-cgi/trace"
 			req, _ := http.NewRequest("GET", requestURL, nil)
 			req.Header.Set("User-Agent", "Mozilla/5.0")
 			req.Close = true
