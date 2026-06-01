@@ -25,6 +25,7 @@ jobs:
 
       # 安装gomobile兼容的NDK r21e
       - name: Setup NDK r21e
+        id: setup-ndk
         uses: nttld/setup-ndk@v1
         with:
           ndk-version: r21e
@@ -40,6 +41,9 @@ jobs:
           go install golang.org/x/mobile/cmd/gomobile@latest
           go install golang.org/x/mobile/cmd/gobind@latest
           export PATH=$HOME/go/bin:$PATH
+          # 强制使用r21e NDK
+          export ANDROID_NDK_HOME=${{ steps.setup-ndk.outputs.ndk-path }}
+          echo "Using NDK: $ANDROID_NDK_HOME"
           gomobile init
           mkdir -p main/libs
           gomobile bind -v -o main/libs/cfdata.aar -target=android ./
