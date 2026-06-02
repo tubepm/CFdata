@@ -165,7 +165,7 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request) {
 			if params.Threads <= 0 {
 				params.Threads = 50
 			}
-			go runUnifiedTask(ws, params.IPType, params.Threads)
+			go runUnifiedTask(ws, params.IPType, params.Threads, params.Port)
 
 		case "start_test":
 			var params struct {
@@ -273,7 +273,11 @@ func initLocations() {
 	fmt.Printf("已加载 %d 个数据中心位置信息\n", len(locationMap))
 }
 
-func runUnifiedTask(ws *websocket.Conn, ipType int, scanMaxThreads int) {
+func runUnifiedTask(ws *websocket.Conn, ipType int, scanMaxThreads int, port int) {
+	// 如果前端没有传端口，默认使用 80
+	if port <= 0 {
+		port = 80
+	}
 	taskMutex.Lock()
 	if isTaskRunning {
 		taskMutex.Unlock()
@@ -339,57 +343,6 @@ func runUnifiedTask(ws *websocket.Conn, ipType int, scanMaxThreads int) {
 
 	sendWSMessage(ws, "log", fmt.Sprintf("正在扫描 %d 个 IP 地址...", len(ipList)))
 
-	// ========== 调试：测试前 3 个 IP 并记录详细结果 ==========
-	debugCount := 3
-	if len(ipList) < debugCount {
-		debugCount = len(ipList)
-	}
-	for i := 0; i < debugCount; i++ {
-		testIP := ipList[i]
-		testAddr := net.JoinHostPort(testIP, "80")
-		
-		// 测试 TCP 连接
-		conn, err := net.DialTimeout("tcp", testAddr, 3*time.Second)
-		if err != nil {
-			sendWSMessage(ws, "log", fmt.Sprintf("[调试] IP %s TCP连接失败: %v", testIP, err))
-			continue
-		}
-		sendWSMessage(ws, "log", fmt.Sprintf("[调试] IP %s TCP连接成功", testIP))
-		
-		// 发送 HTTP 请求
-		httpReq := fmt.Sprintf("GET /cdn-cgi/trace HTTP/1.1\r\n"+
-			"Host: %s\r\n"+
-			"User-Agent: Mozilla/5.0\r\n"+
-			"Connection: close\r\n\r\n", testAddr)
-		_, err = conn.Write([]byte(httpReq))
-		if err != nil {
-			sendWSMessage(ws, "log", fmt.Sprintf("[调试] IP %s HTTP发送失败: %v", testIP, err))
-			conn.Close()
-			continue
-		}
-		
-		// 读取响应
-		reader := bufio.NewReader(conn)
-		resp, err := http.ReadResponse(reader, nil)
-		if err != nil {
-			sendWSMessage(ws, "log", fmt.Sprintf("[调试] IP %s HTTP解析失败: %v", testIP, err))
-			conn.Close()
-			continue
-		}
-		
-		bodyBytes, err := io.ReadAll(resp.Body)
-		resp.Body.Close()
-		conn.Close()
-		
-		bodyStr := string(bodyBytes)
-		hasUAG := strings.Contains(bodyStr, "uag=Mozilla/5.0")
-		hasColo := strings.Contains(bodyStr, "colo=")
-		
-		sendWSMessage(ws, "log", fmt.Sprintf("[调试] IP %s 状态=%s 长度=%d 含uag=%v 含colo=%v", 
-			testIP, resp.Status, len(bodyStr), hasUAG, hasColo))
-	}
-	// ========== 调试结束 ==========
-
 	var wg sync.WaitGroup
 	wg.Add(len(ipList))
 	thread := make(chan struct{}, scanMaxThreads)
@@ -416,7 +369,7 @@ func runUnifiedTask(ws *websocket.Conn, ipType int, scanMaxThreads int) {
 			}()
 
 			// ========== 修复核心: 使用 http.ReadResponse 正确解析 HTTP 响应 ==========
-			targetAddr := net.JoinHostPort(ip, "80")
+			targetAddr := net.JoinHostPort(ip, strconv.Itoa(port))
 
 			// 1. 建立 TCP 连接并测量延迟
 			start := time.Now()
@@ -435,14 +388,14 @@ func runUnifiedTask(ws *websocket.Conn, ipType int, scanMaxThreads int) {
 				"User-Agent: Mozilla/5.0\r\n"+
 				"Connection: close\r\n\r\n", targetAddr)
 
-			_, err = conn.Write([]byte(httpReq))
+			_, err = finalConn.Write([]byte(httpReq))
 			if err != nil {
-				conn.Close()
+				finalConn.Close()
 				return
 			}
 
 			// 4. 使用 http.ReadResponse 解析响应（自动处理 chunked encoding）
-			reader := bufio.NewReader(conn)
+			reader := bufio.NewReader(finalConn)
 			resp, err := http.ReadResponse(reader, nil)
 			if err != nil {
 				conn.Close()
@@ -452,7 +405,7 @@ func runUnifiedTask(ws *websocket.Conn, ipType int, scanMaxThreads int) {
 			// 5. 读取 body
 			bodyBytes, err := io.ReadAll(resp.Body)
 			resp.Body.Close()
-			conn.Close()
+			finalConn.Close()
 			if err != nil {
 				return
 			}
