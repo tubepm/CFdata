@@ -71,6 +71,7 @@ var (
 	scanMutex   sync.Mutex
 
 	locationMap map[string]location
+	locMutex    sync.RWMutex
 
 	upgrader = websocket.Upgrader{
 		CheckOrigin: func(r *http.Request) bool { return true },
@@ -200,6 +201,35 @@ func sendWSMessage(ws *websocket.Conn, msgType string, data interface{}) {
 	ws.WriteJSON(msg)
 }
 
+// ========== 修复: 确保 locationMap 已加载，并返回状态 ==========
+func ensureLocations(ws *websocket.Conn) bool {
+	locMutex.RLock()
+	loaded := locationMap != nil && len(locationMap) > 0
+	locMutex.RUnlock()
+
+	if loaded {
+		return true
+	}
+
+	sendWSMessage(ws, "log", "位置信息未加载，正在初始化...")
+	initLocations()
+
+	locMutex.RLock()
+	loaded = locationMap != nil && len(locationMap) > 0
+	locMutex.RUnlock()
+
+	if !loaded {
+		sendWSMessage(ws, "error", "位置信息加载失败，请检查网络或 locations.json 文件")
+		return false
+	}
+
+	locMutex.RLock()
+	count := len(locationMap)
+	locMutex.RUnlock()
+	sendWSMessage(ws, "log", fmt.Sprintf("已加载 %d 个数据中心位置信息", count))
+	return true
+}
+
 func initLocations() {
 	filename := dataPath("locations.json")
 	url := "https://www.baipiao.eu.org/cloudflare/locations"
@@ -237,10 +267,12 @@ func initLocations() {
 		return
 	}
 
+	locMutex.Lock()
 	locationMap = make(map[string]location)
 	for _, loc := range locations {
 		locationMap[loc.Iata] = loc
 	}
+	locMutex.Unlock()
 	fmt.Printf("已加载 %d 个数据中心位置信息\n", len(locationMap))
 }
 
@@ -261,6 +293,11 @@ func runUnifiedTask(ws *websocket.Conn, ipType int, scanMaxThreads int) {
 	}()
 
 	sendWSMessage(ws, "log", "开始扫描任务...")
+
+	// ========== 修复: 确保 locations 已加载 ==========
+	if !ensureLocations(ws) {
+		return
+	}
 
 	var filename, apiURL string
 	if ipType == 6 {
@@ -331,7 +368,6 @@ func runUnifiedTask(ws *websocket.Conn, ipType int, scanMaxThreads int) {
 				}
 			}()
 
-			// ========== 修复核心: 正确测量TCP延迟并发送HTTP请求 ==========
 			targetAddr := net.JoinHostPort(ip, "80")
 			dialer := &net.Dialer{Timeout: 2 * time.Second}
 
@@ -343,7 +379,6 @@ func runUnifiedTask(ws *websocket.Conn, ipType int, scanMaxThreads int) {
 			tcpDuration := time.Since(start)
 			defer conn.Close()
 
-			// 使用 DialContext 让 HTTP 客户端走已建立的连接，但正确设置超时
 			client := http.Client{
 				Transport: &http.Transport{
 					DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
@@ -374,7 +409,9 @@ func runUnifiedTask(ws *websocket.Conn, ipType int, scanMaxThreads int) {
 				matches := regex.FindStringSubmatch(bodyStr)
 				if len(matches) > 1 {
 					dataCenter := matches[1]
+					locMutex.RLock()
 					loc := locationMap[dataCenter]
+					locMutex.RUnlock()
 					res := ScanResult{
 						IP:          ip,
 						DataCenter:  dataCenter,
@@ -573,7 +610,6 @@ func runSpeedTest(ws *websocket.Conn, ip string, port int) {
 	}
 	hostname := parsedURL.Hostname()
 
-	// ========== 修复: 使用 DialContext 正确指定目标IP ==========
 	client := http.Client{
 		Transport: &http.Transport{
 			DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
@@ -720,3 +756,4 @@ func getRandomIPv6s(ipList []string) []string {
 	}
 	return randomIPs
 }
+
