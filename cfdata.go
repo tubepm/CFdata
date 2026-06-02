@@ -373,16 +373,31 @@ func runUnifiedTask(ws *websocket.Conn, ipType int, scanMaxThreads int, port int
 
 			// 1. 建立 TCP 连接并测量延迟
 			start := time.Now()
-			conn, err := net.DialTimeout("tcp", targetAddr, 2*time.Second)
+			conn, err := net.DialTimeout("tcp", targetAddr, 3*time.Second)
 			if err != nil {
 				return
 			}
 			tcpDuration := time.Since(start)
 
-			// 2. 设置超时
-			conn.SetDeadline(time.Now().Add(5 * time.Second))
+			// 2. 如果是 HTTPS 端口，进行 TLS 握手
+			finalConn := conn
+			isHTTPS := port == 443 || port == 2053 || port == 2083 || port == 2087 || port == 2096 || port == 8443
+			if isHTTPS {
+				tlsConn := tls.Client(conn, &tls.Config{
+					InsecureSkipVerify: true,
+				})
+				tlsConn.SetDeadline(time.Now().Add(8 * time.Second))
+				if err := tlsConn.Handshake(); err != nil {
+					conn.Close()
+					return
+				}
+				finalConn = tlsConn
+			}
 
-			// 3. 发送 HTTP 请求
+			// 3. 设置超时
+			finalConn.SetDeadline(time.Now().Add(8 * time.Second))
+
+			// 4. 发送 HTTP 请求
 			httpReq := fmt.Sprintf("GET /cdn-cgi/trace HTTP/1.1\r\n"+
 				"Host: %s\r\n"+
 				"User-Agent: Mozilla/5.0\r\n"+
@@ -394,15 +409,15 @@ func runUnifiedTask(ws *websocket.Conn, ipType int, scanMaxThreads int, port int
 				return
 			}
 
-			// 4. 使用 http.ReadResponse 解析响应（自动处理 chunked encoding）
+			// 5. 使用 http.ReadResponse 解析响应（自动处理 chunked encoding）
 			reader := bufio.NewReader(finalConn)
 			resp, err := http.ReadResponse(reader, nil)
 			if err != nil {
-				conn.Close()
+				finalConn.Close()
 				return
 			}
 
-			// 5. 读取 body
+			// 6. 读取 body
 			bodyBytes, err := io.ReadAll(resp.Body)
 			resp.Body.Close()
 			finalConn.Close()
@@ -770,3 +785,4 @@ func getRandomIPv6s(ipList []string) []string {
 	}
 	return randomIPs
 }
+
