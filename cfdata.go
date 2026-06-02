@@ -1,20 +1,15 @@
-package cfdata
-
 import (
 	"bufio"
 	"embed"
 	"encoding/json"
 	"fmt"
 	"io"
-	"math"
 	"math/rand"
 	"net"
 	"net/http"
-	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
-	"sort"
 	"strconv"
 	"strings"
 	"sync"
