@@ -3,8 +3,7 @@ package cfdata
 import (
 	"bufio"
 	"context"
-	"crypto/tls"
-	"embed"
+		"embed"
 	"encoding/json"
 	"fmt"
 	"io"
