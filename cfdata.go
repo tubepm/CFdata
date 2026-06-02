@@ -2,7 +2,6 @@ package cfdata
 
 import (
 	"bufio"
-	"context"
 	"embed"
 	"encoding/json"
 	"fmt"
