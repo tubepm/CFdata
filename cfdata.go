@@ -2,6 +2,8 @@ package cfdata
 
 import (
 	"bufio"
+	"context"
+	"crypto/tls"
 	"embed"
 	"encoding/json"
 	"fmt"
@@ -19,8 +21,6 @@ import (
 	"strings"
 	"sync"
 	"time"
-
-	"crypto/tls"
 
 	"github.com/gorilla/websocket"
 )
@@ -65,19 +65,6 @@ type location struct {
 	Cca2   string  `json:"cca2"`
 	Region string  `json:"region"`
 	City   string  `json:"city"`
-}
-
-// ========== 新增: 自定义 RoundTripper，直接使用已建立的连接 ==========
-type singleConnTransport struct {
-	conn net.Conn
-}
-
-func (t *singleConnTransport) RoundTrip(req *http.Request) (*http.Response, error) {
-	if err := req.Write(t.conn); err != nil {
-		return nil, err
-	}
-	reader := bufio.NewReader(t.conn)
-	return http.ReadResponse(reader, req)
 }
 
 var (
@@ -215,30 +202,28 @@ func sendWSMessage(ws *websocket.Conn, msgType string, data interface{}) {
 	ws.WriteJSON(msg)
 }
 
+// ========== 修复: 总是发送 locations 加载日志 ==========
 func ensureLocations(ws *websocket.Conn) bool {
 	locMutex.RLock()
 	loaded := locationMap != nil && len(locationMap) > 0
-	locMutex.RUnlock()
-
-	if loaded {
-		return true
-	}
-
-	sendWSMessage(ws, "log", "位置信息未加载，正在初始化...")
-	initLocations()
-
-	locMutex.RLock()
-	loaded = locationMap != nil && len(locationMap) > 0
+	count := len(locationMap)
 	locMutex.RUnlock()
 
 	if !loaded {
-		sendWSMessage(ws, "error", "位置信息加载失败，请检查网络或 locations.json 文件")
-		return false
+		sendWSMessage(ws, "log", "位置信息未加载，正在初始化...")
+		initLocations()
+
+		locMutex.RLock()
+		loaded = locationMap != nil && len(locationMap) > 0
+		count = len(locationMap)
+		locMutex.RUnlock()
+
+		if !loaded {
+			sendWSMessage(ws, "error", "位置信息加载失败，请检查网络或 locations.json 文件")
+			return false
+		}
 	}
 
-	locMutex.RLock()
-	count := len(locationMap)
-	locMutex.RUnlock()
 	sendWSMessage(ws, "log", fmt.Sprintf("已加载 %d 个数据中心位置信息", count))
 	return true
 }
@@ -380,7 +365,7 @@ func runUnifiedTask(ws *websocket.Conn, ipType int, scanMaxThreads int) {
 				}
 			}()
 
-			// ========== 修复核心: 使用自定义 RoundTripper 发送 HTTP 请求 ==========
+			// ========== 修复核心: 使用 http.ReadResponse 正确解析 HTTP 响应 ==========
 			targetAddr := net.JoinHostPort(ip, "80")
 
 			// 1. 建立 TCP 连接并测量延迟
@@ -391,26 +376,30 @@ func runUnifiedTask(ws *websocket.Conn, ipType int, scanMaxThreads int) {
 			}
 			tcpDuration := time.Since(start)
 
-			// 2. 设置读写超时
+			// 2. 设置超时
 			conn.SetDeadline(time.Now().Add(5 * time.Second))
 
-			// 3. 使用自定义 Transport 发送 HTTP 请求
-			client := http.Client{
-				Transport: &singleConnTransport{conn: conn},
-				Timeout:   5 * time.Second,
-			}
+			// 3. 发送 HTTP 请求
+			httpReq := fmt.Sprintf("GET /cdn-cgi/trace HTTP/1.1\r\n"+
+				"Host: %s\r\n"+
+				"User-Agent: Mozilla/5.0\r\n"+
+				"Connection: close\r\n\r\n", targetAddr)
 
-			requestURL := "http://" + targetAddr + "/cdn-cgi/trace"
-			req, _ := http.NewRequest("GET", requestURL, nil)
-			req.Header.Set("User-Agent", "Mozilla/5.0")
-			req.Close = true
-
-			resp, err := client.Do(req)
+			_, err = conn.Write([]byte(httpReq))
 			if err != nil {
 				conn.Close()
 				return
 			}
 
+			// 4. 使用 http.ReadResponse 解析响应（自动处理 chunked encoding）
+			reader := bufio.NewReader(conn)
+			resp, err := http.ReadResponse(reader, nil)
+			if err != nil {
+				conn.Close()
+				return
+			}
+
+			// 5. 读取 body
 			bodyBytes, err := io.ReadAll(resp.Body)
 			resp.Body.Close()
 			conn.Close()
@@ -418,6 +407,7 @@ func runUnifiedTask(ws *websocket.Conn, ipType int, scanMaxThreads int) {
 				return
 			}
 
+			// 6. 解析 body
 			bodyStr := string(bodyBytes)
 			if strings.Contains(bodyStr, "uag=Mozilla/5.0") {
 				regex := regexp.MustCompile(`colo=([A-Z]+)`)
@@ -625,47 +615,16 @@ func runSpeedTest(ws *websocket.Conn, ip string, port int) {
 	}
 	hostname := parsedURL.Hostname()
 
-	// ========== 修复: 使用自定义 RoundTripper ==========
-	targetAddr := net.JoinHostPort(ip, strconv.Itoa(port))
-	conn, err := net.DialTimeout("tcp", targetAddr, 5*time.Second)
-	if err != nil {
-		sendWSMessage(ws, "speed_test_result", map[string]string{
-			"ip":    ip,
-			"speed": "连接错误",
-		})
-		sendWSMessage(ws, "log", "测速失败: "+err.Error())
-		return
-	}
-
-	// 如果是 HTTPS，需要 TLS 握手
-	var finalConn net.Conn = conn
-	if scheme == "https" {
-		tlsConn := tls.Client(conn, &tls.Config{
-			ServerName:         hostname,
-			InsecureSkipVerify: true,
-		})
-		if err := tlsConn.SetDeadline(time.Now().Add(10 * time.Second)); err != nil {
-			conn.Close()
-			sendWSMessage(ws, "speed_test_result", map[string]string{
-				"ip":    ip,
-				"speed": "TLS握手失败",
-			})
-			return
-		}
-		if err := tlsConn.Handshake(); err != nil {
-			conn.Close()
-			sendWSMessage(ws, "speed_test_result", map[string]string{
-				"ip":    ip,
-				"speed": "TLS握手失败",
-			})
-			return
-		}
-		finalConn = tlsConn
-	}
-
+	// 使用标准 http.Client 进行测速（测速不需要精确控制连接）
 	client := http.Client{
-		Transport: &singleConnTransport{conn: finalConn},
-		Timeout:   15 * time.Second,
+		Transport: &http.Transport{
+			DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
+				return net.Dial("tcp", net.JoinHostPort(ip, strconv.Itoa(port)))
+			},
+			TLSHandshakeTimeout: 10 * time.Second,
+			DisableKeepAlives:   true,
+		},
+		Timeout: 15 * time.Second,
 	}
 
 	fullURL := fmt.Sprintf("%s://%s%s", scheme, hostname, parsedURL.RequestURI())
@@ -676,14 +635,14 @@ func runSpeedTest(ws *websocket.Conn, ip string, port int) {
 	start := time.Now()
 	resp, err := client.Do(req)
 	if err != nil {
-		finalConn.Close()
 		sendWSMessage(ws, "speed_test_result", map[string]string{
 			"ip":    ip,
-			"speed": "请求错误",
+			"speed": "连接错误",
 		})
 		sendWSMessage(ws, "log", "测速失败: "+err.Error())
 		return
 	}
+	defer resp.Body.Close()
 
 	buf := make([]byte, 32*1024)
 	var totalBytes int64
@@ -722,9 +681,6 @@ func runSpeedTest(ws *websocket.Conn, ip string, port int) {
 		}
 	}
 
-	resp.Body.Close()
-	finalConn.Close()
-
 	speedStr := fmt.Sprintf("%.2f MB/s", maxSpeed)
 	sendWSMessage(ws, "speed_test_result", map[string]string{
 		"ip":    ip,
@@ -733,7 +689,6 @@ func runSpeedTest(ws *websocket.Conn, ip string, port int) {
 	sendWSMessage(ws, "log", fmt.Sprintf("IP %s 测速完成: %s", ip, speedStr))
 }
 
-// ========== 修复: 检查 HTTP 状态码 ==========
 func getURLContent(targetURL string) (string, error) {
 	resp, err := http.Get(targetURL)
 	if err != nil {
@@ -812,5 +767,3 @@ func getRandomIPv6s(ipList []string) []string {
 	}
 	return randomIPs
 }
-
-
