@@ -2,7 +2,6 @@ package cfdata
 
 import (
 	"bufio"
-	"context"
 		"embed"
 	"encoding/json"
 	"fmt"
@@ -20,6 +19,9 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"context"
+	"crypto/tls"
 
 	"github.com/gorilla/websocket"
 )
@@ -785,4 +787,3 @@ func getRandomIPv6s(ipList []string) []string {
 	}
 	return randomIPs
 }
-
